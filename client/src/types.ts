@@ -29,6 +29,8 @@ export interface PacketEvent {
   packetType: string;
   hash: string;
   pathLen: number;
+  /** Ordered node hashes for particle animation: [src?, relay…, observer?] */
+  path: string[];
   receivedAt: number;
 }
 
@@ -51,7 +53,7 @@ export const ROLE_NAMES: Record<number, string> = {
 
 export const ROLE_COLORS: Record<number, string> = {
   0: '#6b7280', // gray    - Unknown
-  1: '#3b82f6', // blue    - ChatNode
+  1: '#3b82f6', // blue    - ChatNode  (diamond)
   2: '#f97316', // orange  - Repeater
   3: '#8b5cf6', // violet  - RoomServer
   4: '#22c55e', // green   - Sensor
@@ -69,5 +71,5 @@ export type WsMessage =
   | { type: 'node'; node: NodeData }
   | { type: 'edge'; edge: EdgeData }
   | { type: 'stats'; stats: StatsData }
-  | { type: 'packet'; packetType: string; hash: string; pathLen: number }
+  | { type: 'packet'; packetType: string; hash: string; pathLen: number; path: string[] }
   | { type: 'debug'; level: 'info' | 'warn' | 'error'; message: string; ts: number };
