@@ -2,6 +2,7 @@ import { MeshCorePacketDecoder } from '@michaelhart/meshcore-decoder';
 import { PayloadType, ControlSubType } from '@michaelhart/meshcore-decoder';
 import type { AdvertPayload, ControlDiscoverRespPayload } from '@michaelhart/meshcore-decoder';
 import { touchNode, touchNodeWithKey, touchEdge, applyAdvert, type NodeRow, type EdgeRow } from './db.js';
+import { debugLog } from './ws-broadcast.js';
 
 export interface ProcessResult {
   nodes: NodeRow[];
@@ -31,30 +32,48 @@ const PAYLOAD_TYPE_NAMES: Record<number, string> = {
 };
 
 /**
- * Extract hex data from MQTT message payload.
- * Handles raw hex strings and simple JSON wrappers.
+ * Extract hex data from an MQTT message payload.
+ *
+ * MeshCore brokers publish packets as raw binary bytes.  Previous code called
+ * Buffer.toString('utf-8') first which turns binary into garbage and then
+ * fails the hex-regex check.  The correct approach is:
+ *   1. Raw binary Buffer → hex-encode the bytes directly with toString('hex')
+ *   2. String that starts with '{' → try JSON wrapper (some bridges do this)
+ *   3. Plain hex string (already encoded)
+ *
+ * Returns null (with a reason string) when the payload can't be interpreted.
  */
-export function extractHex(raw: Buffer | string): string | null {
-  const str = Buffer.isBuffer(raw) ? raw.toString('utf-8').trim() : String(raw).trim();
+export function extractHex(raw: Buffer | string): { hex: string } | { error: string } {
+  // ── 1. Raw binary buffer (the normal MeshCore MQTT case) ──────────────────
+  if (Buffer.isBuffer(raw)) {
+    if (raw.length < 2) return { error: `payload too short (${raw.length}B)` };
+    return { hex: raw.toString('hex') };
+  }
 
-  // Try JSON first (some bridges wrap in JSON)
+  const str = String(raw).trim();
+
+  // ── 2. JSON wrapper ───────────────────────────────────────────────────────
   if (str.startsWith('{')) {
     try {
       const obj = JSON.parse(str) as Record<string, unknown>;
-      const hex = obj.hex ?? obj.data ?? obj.packet ?? obj.payload;
-      if (typeof hex === 'string') return hex.trim().replace(/\s+/g, '');
+      const candidate = obj.hex ?? obj.data ?? obj.packet ?? obj.payload;
+      if (typeof candidate === 'string') {
+        const h = candidate.trim().replace(/\s+/g, '');
+        if (h.length >= 4) return { hex: h };
+      }
     } catch {
-      // fall through to raw hex
+      // fall through
     }
+    return { error: `JSON payload missing hex/data/packet/payload field: ${str.slice(0, 60)}` };
   }
 
-  // Assume plain hex string
+  // ── 3. Plain hex string ───────────────────────────────────────────────────
   const cleaned = str.replace(/\s+/g, '');
   if (/^[0-9a-fA-F]+$/.test(cleaned) && cleaned.length >= 4) {
-    return cleaned;
+    return { hex: cleaned };
   }
 
-  return null;
+  return { error: `unrecognised payload format (first 60 chars): ${str.slice(0, 60)}` };
 }
 
 /**
@@ -65,11 +84,16 @@ export function processPacket(hex: string, observerKey?: string): ProcessResult 
   let packet;
   try {
     packet = MeshCorePacketDecoder.decode(hex);
-  } catch {
+  } catch (e) {
+    debugLog.warn(`[decode] exception on hex ${hex.slice(0, 16)}…: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
 
-  if (!packet.isValid) return null;
+  if (!packet.isValid) {
+    const reasons = packet.errors?.join('; ') ?? 'unknown';
+    debugLog.warn(`[decode] invalid packet ${hex.slice(0, 16)}…: ${reasons}`);
+    return null;
+  }
 
   const now = Date.now();
   const updatedNodes: NodeRow[] = [];

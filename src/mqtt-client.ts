@@ -5,8 +5,12 @@ import { broadcastNode, broadcastEdge, broadcastStats, broadcastPacket, debugLog
 const MQTT_URL = process.env.MQTT_URL ?? 'mqtt://mqtt.eastmesh.au:1883';
 const MQTT_TOPIC = 'meshcore/MEL/+/packets';
 
-// Rolling packet counter for stats broadcasts
-let packetCount = 0;
+// Counters reset every stats interval
+let rxTotal     = 0; // raw MQTT messages received
+let hexFail     = 0; // failed to extract hex from payload
+let decodeFail  = 0; // hex extracted but decoder returned null
+let decodeOk    = 0; // successfully decoded and stored
+
 let statsTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startMqtt(): mqtt.MqttClient {
@@ -34,22 +38,36 @@ export function startMqtt(): mqtt.MqttClient {
   });
 
   client.on('reconnect', () => debugLog.info('[mqtt] reconnecting…'));
-  client.on('offline', () => debugLog.warn('[mqtt] offline'));
-  client.on('error', (err) => debugLog.error(`[mqtt] error: ${err.message}`));
+  client.on('offline',   () => debugLog.warn('[mqtt] offline'));
+  client.on('error',     (err) => debugLog.error(`[mqtt] error: ${err.message}`));
 
   client.on('message', (topic, payload) => {
-    debugLog.info(`[mqtt] message on ${topic} (${payload.length} bytes)`);
+    rxTotal++;
     // Extract observer's public key from topic: meshcore/{IATA}/{PUBKEY}/packets
     const parts = topic.split('/');
     const observerKey = parts[2] ?? undefined;
 
-    const hex = extractHex(payload);
-    if (!hex) return;
+    const hexResult = extractHex(payload);
+    if ('error' in hexResult) {
+      hexFail++;
+      debugLog.warn(`[mqtt] bad payload on ${topic} — ${hexResult.error}`);
+      return;
+    }
 
+    const { hex } = hexResult;
     const result = processPacket(hex, observerKey);
-    if (!result) return;
+    if (!result) {
+      decodeFail++;
+      // per-packet reason already logged by processPacket
+      return;
+    }
 
-    packetCount++;
+    decodeOk++;
+    const pathStr = result.animPath.length >= 2 ? result.animPath.join('→') : '(direct)';
+    debugLog.info(
+      `[pkt] ${result.packetType.padEnd(12)} hash=${result.hash.slice(0, 8)} ` +
+      `nodes=${result.nodes.length} path=${pathStr}`
+    );
 
     // Broadcast topology updates
     for (const node of result.nodes) broadcastNode(node);
@@ -57,9 +75,13 @@ export function startMqtt(): mqtt.MqttClient {
     broadcastPacket(result.packetType, result.hash, result.animPath);
   });
 
-  // Broadcast stats every 5 seconds
+  // Broadcast stats + pipeline counters every 5 seconds
   statsTimer = setInterval(() => {
     broadcastStats();
+    debugLog.info(
+      `[stats] rx=${rxTotal} ok=${decodeOk} hexFail=${hexFail} decodeFail=${decodeFail}`
+    );
+    rxTotal = hexFail = decodeFail = decodeOk = 0;
   }, 5000);
 
   return client;
