@@ -31,12 +31,14 @@ app.get('/api/graph', (_req, res) => {
   res.json({ nodes: getAllNodes(), edges: getAllEdges(), stats: getStats() });
 });
 
-// Serve built frontend in production
-const clientDist = path.join(__dirname, '..', 'client', 'dist');
-app.use(express.static(clientDist));
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(clientDist, 'index.html'));
-});
+// Serve built frontend (production only — in dev, Vite serves the client)
+if (process.env.NODE_ENV === 'production') {
+  const clientDist = path.join(__dirname, '..', 'client', 'dist');
+  app.use(express.static(clientDist));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
 
 // --- Start servers ---
 
