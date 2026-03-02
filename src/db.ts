@@ -85,6 +85,29 @@ const upsertNode = db.prepare(`
     packet_count = packet_count + 1
 `);
 
+// Pre-generate an observer node from a known full public key (no name or role yet)
+const upsertNodeObserver = db.prepare(`
+  INSERT INTO nodes (hash, public_key, first_seen, last_seen, packet_count)
+  VALUES (?, ?, ?, ?, 1)
+  ON CONFLICT(hash) DO UPDATE SET
+    public_key   = COALESCE(public_key, excluded.public_key),
+    last_seen    = excluded.last_seen,
+    packet_count = packet_count + 1
+  ON CONFLICT(public_key) DO UPDATE SET
+    last_seen    = excluded.last_seen,
+    packet_count = packet_count + 1
+`);
+
+// Touch a group-channel virtual node (device_role=5); preserves a real role if already known
+const upsertGroupChannel = db.prepare(`
+  INSERT INTO nodes (hash, device_role, first_seen, last_seen, packet_count)
+  VALUES (?, 5, ?, ?, 1)
+  ON CONFLICT(hash) DO UPDATE SET
+    device_role  = CASE WHEN device_role = 0 OR device_role = 5 THEN 5 ELSE device_role END,
+    last_seen    = excluded.last_seen,
+    packet_count = packet_count + 1
+`);
+
 const updateNodeFromAdvert = db.prepare(`
   UPDATE nodes SET name = ?, device_role = ?, public_key = ?
   WHERE hash = ?
@@ -134,6 +157,20 @@ const getEdge = db.prepare(`SELECT * FROM edges WHERE from_hash = ? AND to_hash 
 export function touchNode(hash: string, now: number): NodeRow {
   upsertNode.run(hash, now, now);
   return getNode.get(hash) as unknown as NodeRow;
+}
+
+/** Pre-generate a node for a known observer public key so it appears on the graph
+ *  before any advert arrives.  The full pubkey is stored so advert correlation works
+ *  correctly via the ON CONFLICT(public_key) path in upsertNodeWithKey. */
+export function touchNodeWithKey(hash: string, publicKey: string, now: number): NodeRow {
+  upsertNodeObserver.run(hash, publicKey, now, now);
+  return getNode.get(hash) as unknown as NodeRow;
+}
+
+/** Create or refresh a virtual group-channel node (device_role 5). */
+export function touchGroupChannel(channelHash: string, now: number): NodeRow {
+  upsertGroupChannel.run(channelHash, now, now);
+  return getNode.get(channelHash) as unknown as NodeRow;
 }
 
 export function touchEdge(fromHash: string, toHash: string, now: number): EdgeRow {

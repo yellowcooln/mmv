@@ -170,31 +170,69 @@ export function NetworkGraph({ nodes, edges, selectedId, onSelect }: Props) {
         onSelect(d.hash);
       });
 
-    // Glow effect for selected node
-    node
-      .append('circle')
-      .attr('class', 'glow')
-      .attr('r', (d) => nodeRadius(d) + 6)
-      .attr('fill', 'none')
-      .attr('stroke', (d) => (d.hash === selectedId ? '#fbbf24' : 'none'))
-      .attr('stroke-width', 2)
-      .attr('opacity', 0.6);
+    // Helper: diamond path for GroupChannel nodes
+    function diamondPath(r: number): string {
+      return `M0,${-r} L${r},0 L0,${r} L${-r},0 Z`;
+    }
 
-    // Main circle
-    node
-      .append('circle')
-      .attr('r', (d) => nodeRadius(d))
-      .attr('fill', (d) => ROLE_COLORS[d.device_role] ?? ROLE_COLORS[0])
-      .attr('stroke', (d) => (d.hash === selectedId ? '#fbbf24' : '#1f2937'))
-      .attr('stroke-width', (d) => (d.hash === selectedId ? 2.5 : 1.5));
+    // Glow ring (circle for regular nodes, diamond outline for group channels)
+    node.each(function(d) {
+      const g = d3.select(this);
+      const r = nodeRadius(d) + 6;
+      const glowColor = d.hash === selectedId ? '#fbbf24' : 'none';
+      if (d.device_role === 5) {
+        g.append('path')
+          .attr('class', 'glow')
+          .attr('d', diamondPath(r))
+          .attr('fill', 'none')
+          .attr('stroke', glowColor)
+          .attr('stroke-width', 2)
+          .attr('opacity', 0.6);
+      } else {
+        g.append('circle')
+          .attr('class', 'glow')
+          .attr('r', r)
+          .attr('fill', 'none')
+          .attr('stroke', glowColor)
+          .attr('stroke-width', 2)
+          .attr('opacity', 0.6);
+      }
+    });
 
-    // Label
+    // Main shape: diamond for GroupChannel, circle for all others
+    node.each(function(d) {
+      const g = d3.select(this);
+      const color = ROLE_COLORS[d.device_role] ?? ROLE_COLORS[0];
+      const strokeColor = d.hash === selectedId ? '#fbbf24' : '#1f2937';
+      const strokeWidth = d.hash === selectedId ? 2.5 : 1.5;
+      if (d.device_role === 5) {
+        g.append('path')
+          .attr('d', diamondPath(nodeRadius(d)))
+          .attr('fill', color)
+          .attr('fill-opacity', 0.75)
+          .attr('stroke', strokeColor)
+          .attr('stroke-width', strokeWidth)
+          .attr('stroke-dasharray', '3,2');
+      } else {
+        g.append('circle')
+          .attr('r', nodeRadius(d))
+          .attr('fill', color)
+          .attr('stroke', strokeColor)
+          .attr('stroke-width', strokeWidth);
+      }
+    });
+
+    // Label: group channels prefix with "ch:"
     node
       .append('text')
-      .text((d) => d.name ?? d.hash.toUpperCase())
+      .text((d) =>
+        d.device_role === 5
+          ? `ch:${d.hash.toUpperCase()}`
+          : (d.name ?? d.hash.toUpperCase())
+      )
       .attr('dy', (d) => -(nodeRadius(d) + 6))
       .attr('text-anchor', 'middle')
-      .attr('fill', '#9ca3af')
+      .attr('fill', (d) => d.device_role === 5 ? '#c084fc' : '#9ca3af')
       .attr('font-size', '11px')
       .attr('font-family', 'monospace')
       .style('pointer-events', 'none')

@@ -34,11 +34,12 @@ export interface PacketEvent {
 
 // DeviceRole values matching the library enum
 export const DeviceRole = {
-  Unknown:    0,
-  ChatNode:   1,
-  Repeater:   2,
-  RoomServer: 3,
-  Sensor:     4,
+  Unknown:      0,
+  ChatNode:     1,
+  Repeater:     2,
+  RoomServer:   3,
+  Sensor:       4,
+  GroupChannel: 5, // virtual node – represents a MeshCore group/channel source
 } as const;
 
 export const ROLE_NAMES: Record<number, string> = {
@@ -47,6 +48,7 @@ export const ROLE_NAMES: Record<number, string> = {
   2: 'Repeater',
   3: 'Room Server',
   4: 'Sensor',
+  5: 'Group Channel',
 };
 
 export const ROLE_COLORS: Record<number, string> = {
@@ -55,6 +57,7 @@ export const ROLE_COLORS: Record<number, string> = {
   2: '#f97316', // orange  - Repeater
   3: '#8b5cf6', // violet  - RoomServer
   4: '#22c55e', // green   - Sensor
+  5: '#9333ea', // purple  - GroupChannel (virtual)
 };
 
 export interface DebugLogEntry {
