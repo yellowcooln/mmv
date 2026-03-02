@@ -1,4 +1,4 @@
-import Database, { type Database as BetterSqliteDb } from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 
@@ -10,11 +10,10 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-export const db: BetterSqliteDb = new Database(DB_PATH);
+export const db = new DatabaseSync(DB_PATH, { enableForeignKeyConstraints: true });
 
-// Enable WAL for better concurrent read performance
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// WAL mode for better concurrent read performance
+db.exec('PRAGMA journal_mode = WAL');
 
 db.exec(`
   -- Nodes identified by their 1-byte path hash (first byte of their Ed25519 public key)
@@ -78,7 +77,7 @@ export interface EdgeRow {
 
 // --- Prepared statements ---
 
-const upsertNode = db.prepare<[string, number, number]>(`
+const upsertNode = db.prepare(`
   INSERT INTO nodes (hash, first_seen, last_seen, packet_count)
   VALUES (?, ?, ?, 1)
   ON CONFLICT(hash) DO UPDATE SET
@@ -86,12 +85,12 @@ const upsertNode = db.prepare<[string, number, number]>(`
     packet_count = packet_count + 1
 `);
 
-const updateNodeFromAdvert = db.prepare<[string | null, number, string, string]>(`
+const updateNodeFromAdvert = db.prepare(`
   UPDATE nodes SET name = ?, device_role = ?, public_key = ?
   WHERE hash = ?
 `);
 
-const upsertNodeWithKey = db.prepare<[string, string, string | null, number, number, number]>(`
+const upsertNodeWithKey = db.prepare(`
   INSERT INTO nodes (hash, public_key, name, device_role, first_seen, last_seen, packet_count)
   VALUES (?, ?, ?, ?, ?, ?, 1)
   ON CONFLICT(hash) DO UPDATE SET
@@ -107,7 +106,7 @@ const upsertNodeWithKey = db.prepare<[string, string, string | null, number, num
     packet_count = packet_count + 1
 `);
 
-const upsertEdge = db.prepare<[string, string, number, number]>(`
+const upsertEdge = db.prepare(`
   INSERT INTO edges (from_hash, to_hash, first_seen, last_seen, packet_count)
   VALUES (?, ?, ?, ?, 1)
   ON CONFLICT(from_hash, to_hash) DO UPDATE SET
@@ -115,12 +114,12 @@ const upsertEdge = db.prepare<[string, string, number, number]>(`
     packet_count = packet_count + 1
 `);
 
-const insertAdvert = db.prepare<[string, string | null, number | null, number | null, number]>(`
+const insertAdvert = db.prepare(`
   INSERT INTO adverts (public_key, name, device_role, timestamp, received_at)
   VALUES (?, ?, ?, ?, ?)
 `);
 
-const upsertLocation = db.prepare<[string, number, number, number]>(`
+const upsertLocation = db.prepare(`
   INSERT INTO locations (public_key, latitude, longitude, updated_at)
   VALUES (?, ?, ?, ?)
   ON CONFLICT(public_key) DO UPDATE SET
@@ -129,19 +128,17 @@ const upsertLocation = db.prepare<[string, number, number, number]>(`
     updated_at = excluded.updated_at
 `);
 
-const getNode = db.prepare<[string], NodeRow>(`SELECT * FROM nodes WHERE hash = ?`);
-const getEdge = db.prepare<[string, string], EdgeRow>(
-  `SELECT * FROM edges WHERE from_hash = ? AND to_hash = ?`
-);
+const getNode = db.prepare(`SELECT * FROM nodes WHERE hash = ?`);
+const getEdge = db.prepare(`SELECT * FROM edges WHERE from_hash = ? AND to_hash = ?`);
 
 export function touchNode(hash: string, now: number): NodeRow {
   upsertNode.run(hash, now, now);
-  return getNode.get(hash)!;
+  return getNode.get(hash) as unknown as NodeRow;
 }
 
 export function touchEdge(fromHash: string, toHash: string, now: number): EdgeRow {
   upsertEdge.run(fromHash, toHash, now, now);
-  return getEdge.get(fromHash, toHash)!;
+  return getEdge.get(fromHash, toHash) as unknown as EdgeRow;
 }
 
 export function applyAdvert(
@@ -166,11 +163,11 @@ export function applyAdvert(
 }
 
 export function getAllNodes(): NodeRow[] {
-  return db.prepare('SELECT * FROM nodes ORDER BY last_seen DESC').all() as NodeRow[];
+  return db.prepare('SELECT * FROM nodes ORDER BY last_seen DESC').all() as unknown as NodeRow[];
 }
 
 export function getAllEdges(): EdgeRow[] {
-  return db.prepare('SELECT * FROM edges').all() as EdgeRow[];
+  return db.prepare('SELECT * FROM edges').all() as unknown as EdgeRow[];
 }
 
 export function getStats(): {
@@ -186,4 +183,13 @@ export function getStats(): {
     db.prepare("SELECT COUNT(*) as c FROM nodes WHERE name IS NOT NULL").get() as { c: number }
   ).c;
   return { nodeCount, edgeCount, advertCount, namedNodeCount };
+}
+
+// Suppress the ExperimentalWarning for node:sqlite in production
+if (process.env.NODE_ENV !== 'test') {
+  process.removeAllListeners('warning');
+  process.on('warning', (w) => {
+    if (w.name === 'ExperimentalWarning' && w.message.includes('SQLite')) return;
+    process.stderr.write(`${w.name}: ${w.message}\n`);
+  });
 }
