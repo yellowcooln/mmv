@@ -77,7 +77,11 @@ export function processPacket(hex: string, observerKey?: string): ProcessResult 
   const packetType = PAYLOAD_TYPE_NAMES[packet.payloadType] ?? String(packet.payloadType);
 
   // --- Process path hashes → nodes + edges ---
-  const path = packet.path ?? [];
+  // Normalise to lowercase: the decoder's byteToHex() returns UPPERCASE (e.g. "AB"),
+  // but applyAdvert() derives hashes via publicKey.slice(0,2).toLowerCase() → "ab".
+  // Without this the same physical node ends up as two separate DB rows and
+  // advert info never lands on the node that was first seen as a path hop.
+  const path = (packet.path ?? []).map(h => h.toLowerCase());
 
   for (const pathHash of path) {
     const node = touchNode(pathHash, now);

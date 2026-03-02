@@ -124,6 +124,14 @@ export function NetworkGraph({ nodes, edges, selectedId, onSelect, livePackets }
       };
     });
 
+    // Seed posRef immediately with initial positions so that animation particles
+    // can find coordinates for brand-new nodes before the first simulation tick.
+    simNodes.forEach((n) => {
+      if (!posRef.current.has(n.hash)) {
+        posRef.current.set(n.hash, { x: n.x, y: n.y });
+      }
+    });
+
     const nodeById = new Map(simNodes.map((n) => [n.hash, n]));
 
     const simEdges: SimEdge[] = edges
