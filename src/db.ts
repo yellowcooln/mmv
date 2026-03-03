@@ -151,16 +151,13 @@ export function applyAdvert(
   deviceRole: number,
   timestamp: number | null,
   now: number,
-  location?: { latitude: number; longitude: number },
-  nodeDeviceRoleOverride?: number
+  location?: { latitude: number; longitude: number }
 ): string {
   // The 1-byte path hash = first byte of the public key
   const hash = hashFromKeyPrefix(publicKey);
   if (!hash) throw new Error('Invalid advert public key: unable to derive 1-byte hash prefix');
 
-  const nodeDeviceRole = nodeDeviceRoleOverride ?? deviceRole;
-
-  upsertNodeWithKey.run(hash, publicKey, name, nodeDeviceRole, now, now);
+  upsertNodeWithKey.run(hash, publicKey, name, deviceRole, now, now);
   insertAdvert.run(publicKey, name, deviceRole, timestamp, now);
 
   if (location) {
