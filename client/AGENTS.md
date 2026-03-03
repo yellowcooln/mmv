@@ -189,6 +189,8 @@ interface PacketEvent {
   packetType: string;
   hash: string;
   pathLen: number;
+  path: string[];            // decoded hop sequence (2-char hex hashes)
+  duration: number | null;   // packet transmission duration in ms (from envelope)
   receivedAt: number;        // added client-side
 }
 

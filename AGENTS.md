@@ -17,7 +17,7 @@ MMV (Mesh MQTT Visualizer) is a real-time MeshCore network topology visualizer. 
 MQTT broker (meshcore/+/+/packets)
         |
         v
-  mqtt-client.ts  ── extracts observer key from topic, decodes hex payload
+  mqtt-client.ts  ── extracts observer key from topic, parses JSON envelope
         |
         v
   processor.ts  ── decodes packet, extracts path hops, creates nodes/edges,
@@ -184,7 +184,7 @@ There are no automated tests currently. Validate by building and spot-checking b
 ### Key concepts
 
 - **1-byte hash**: MeshCore identifies nodes in packet paths by the first byte of their Ed25519 public key. This means hash collisions are possible (only 256 values). The visualizer treats each unique 1-byte hash as a distinct node.
-- **Observer**: The MQTT gateway node that received the packet over RF and published it to MQTT. Identified from the topic structure `meshcore/<namespace>/<observer_key>/raw`. The observer is linked as the final hop in the path.
+- **Observer**: The MQTT gateway node that received the packet over RF and published it to MQTT. Identified from the topic structure `meshcore/<namespace>/<observer_key>/packets`. The observer is linked as the final hop in the path.
 - **Advert enrichment**: When an Advert packet is decoded, the originating node is enriched with name, public key, and device role. An edge is created from the advert source to the first path hop if they differ.
 
 ## Packet processing pipeline
@@ -202,11 +202,7 @@ This is the core logic flow for every incoming MQTT message:
    - Call `applyAdvert()` to upsert node with public key, name, device role
    - Store the advert record and optional location
    - Link advert source to first path hop if they differ
-6. **Broadcast** (`mqtt-client.ts` → `ws-broadcast.ts`): Push updated nodes, edges, and packet event to all WebSocket clients.
-
-### Alternative decode path
-
-`processDecodedPacket()` handles pre-decoded JSON payloads (not raw hex). It extracts path arrays from nested JSON structures and normalizes each hash entry. This path does not support advert enrichment.
+6. **Broadcast** (`mqtt-client.ts` → `ws-broadcast.ts`): Push updated nodes, edges, packet event (including path and duration from the envelope) to all WebSocket clients.
 
 ## WebSocket protocol
 
@@ -218,7 +214,7 @@ All messages are JSON with a `type` discriminator. Server-to-client only (no cli
 | `node` | `{ node: NodeRow }` | Node created or updated |
 | `edge` | `{ edge: EdgeRow }` | Edge created or updated |
 | `stats` | `{ stats: { nodeCount, edgeCount, advertCount, namedNodeCount } }` | Every 5 seconds |
-| `packet` | `{ packetType, hash, pathLen }` | Each successfully processed packet |
+| `packet` | `{ packetType, hash, pathLen, path, duration }` | Each successfully processed packet |
 | `debug` | `{ level: 'info'|'warn'|'error', message, ts }` | Backend log events |
 
 The frontend receives `init` on connect with the full graph state, then applies incremental `node`/`edge` messages to stay in sync.

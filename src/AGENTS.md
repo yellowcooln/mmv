@@ -24,7 +24,7 @@ In production mode (`NODE_ENV=production`), it also serves the built frontend fr
 
 ### `mqtt-client.ts` — MQTT connection and packet dispatch
 
-Connects to the MQTT broker, subscribes to the raw packet topic, and dispatches incoming messages through the processing pipeline.
+Connects to the MQTT broker, subscribes to the `/packets` topic, and dispatches incoming messages through the processing pipeline.
 
 Key behaviors:
 - **Topic parsing**: Splits topic `meshcore/<namespace>/<observer_key>/packets` to extract the observer's public key from `parts[2]`.
@@ -37,36 +37,28 @@ Key behaviors:
 
 **Packet envelope fields** (available in the JSON but not all currently used):
 - `raw` — hex packet data (extracted and decoded)
-- `SNR`, `RSSI` — signal quality metrics
-- `hash` — packet hash from the gateway
-- `packet_type` — payload type as string
-- `score`, `duration` — reception quality
-- `direction` — `rx`/`tx`
-- `timestamp`, `time`, `date` — reception timing
+- `duration` — packet transmission duration in ms (extracted and broadcast to frontend)
+- `SNR`, `RSSI` — signal quality metrics (not yet used)
+- `hash` — packet hash from the gateway (not yet used)
+- `packet_type` — payload type as string (not yet used)
+- `score` — reception quality score (not yet used)
+- `direction` — `rx`/`tx` (not yet used)
+- `timestamp`, `time`, `date` — reception timing (not yet used)
 
 **When to modify**: Supporting new MQTT topic patterns, new stream types, using additional envelope metadata, or adjusting the stats broadcast interval.
 
 ### `processor.ts` — Packet decode and topology inference
 
-The core logic module. Two main entry points:
+The core logic module. Single entry point:
 
 **`processPacket(hex, observerKey?)`** — Decodes raw hex via `MeshCorePacketDecoder`:
 1. Decode and validate (`isValid` check)
-2. Extract path array, normalize hashes to lowercase
+2. Extract path array, normalize each entry via `normalizeHash()` (handles both integer byte values 0-255 and hex string formats)
 3. Call `applyPathAndObserver()` to create nodes and edges from path hops + observer
 4. If Advert payload: enrich node via `applyAdvert()`, link advert source to first path hop
-5. Return `{ nodes, edges, packetType, hash }` or `null` on failure
+5. Return `{ nodes, edges, packetType, hash, path }` or `null` on failure
 
-**`processDecodedPacket(raw, observerKey?)`** — Handles pre-decoded JSON payloads:
-1. Parse JSON, find path in nested structures (`obj.path`, `obj.packet.path`, `obj.decoded.path`)
-2. Normalize each path entry via `normalizeHash()` (handles both integer 0-255 and hex string formats)
-3. Call `applyPathAndObserver()` — no advert enrichment in this path
-
-**`extractHex(raw)`** — Extracts hex string from payload:
-- JSON: looks for `hex`, `data`, `packet`, or `payload` fields
-- Raw: validates as hex string with minimum 4 chars
-
-**`applyPathAndObserver(path, observerKey, now)`** — Shared topology builder:
+**`applyPathAndObserver(path, observerKey, now)`** — Internal topology builder:
 - Touches a node for each path hash
 - Touches an edge for each consecutive pair `[i] -> [i+1]`
 - Derives observer hash from key, touches observer node, links last hop to observer
@@ -84,13 +76,20 @@ All database access is centralized here. Uses `node:sqlite` `DatabaseSync` with 
 - `adverts` — Auto-increment PK, append-only history
 - `locations` — PK: `public_key`, GPS coordinates
 
-**Prepared statements** (cached at module load):
+**Prepared statements** (all cached at module load):
+
+Write statements:
 - `upsertNode` — Insert or increment `packet_count`, update `last_seen`
 - `upsertNodeWithKey` — Insert with full advert data; handles both hash and public_key conflicts via dual `ON CONFLICT` clauses
 - `updateNodeFromAdvert` — Direct update of name, device_role, public_key by hash
 - `upsertEdge` — Insert or increment `packet_count`, update `last_seen`
 - `insertAdvert` — Append advert record
 - `upsertLocation` — Insert or update GPS coordinates
+
+Read statements:
+- `getNode` / `getEdge` — Single row lookups by key
+- `selectAllNodes` / `selectAllEdges` — Full table queries
+- `countNodes` / `countEdges` / `countAdverts` / `countNamedNodes` — Stats counts
 
 **Exported helpers**:
 - `touchNode(hash, now)` -> `NodeRow` — Upsert node, return current row
@@ -156,6 +155,7 @@ interface ProcessResult {
   edges: EdgeRow[];
   packetType: string;    // e.g. "Advert", "TextMessage", "Trace"
   hash: string;          // packet messageHash
+  path: string[];        // normalized 2-char hex hashes from decoded packet
 }
 
 interface NodeRow {
