@@ -1,84 +1,138 @@
 # MMV — Mesh Network Visualizer
 
-A web app that connects to a LetsMesh-style MQTT server and visualises the MeshCore mesh network topology in real time.
+MMV is a real-time MeshCore topology visualizer.
 
-## What it does
+It listens to MeshCore packets from MQTT, infers node/edge relationships from path hops, stores state in SQLite, and streams live updates to a React UI over WebSocket.
 
-- Subscribes to both `meshcore/+/+/raw` and `meshcore/+/+/packets` by default
-- Decodes every packet with [`@michaelhart/meshcore-decoder`](https://github.com/michaelhart/meshcore-decoder)
-- Extracts the **path** field from each packet — consecutive 1-byte node hashes that show which nodes relayed it
-- Builds a **force-directed graph** of nodes and edges as the network is heard
-- Stores **Advert** payloads to match human names against node hashes
-- Stores **location data** from Adverts for future use but does **not** use it to position nodes in the graph
+## Features
+
+- Real-time topology graph from MeshCore packet paths
+- SQLite-backed persistence for nodes, edges, adverts, and locations
+- Node enrichment from `Advert` payloads (name, public key, role)
+- Optional observer pre-population using MQTT topic keys (`MQTT_OBSERVERS`)
+- Backend debug log stream over WebSocket
+- Frontend controls for:
+  - 2D/3D graph mode
+  - Label visibility
+  - Packet badge visibility
+  - Link and force tuning
 
 ## Architecture
 
+```text
+MQTT broker
+   (meshcore/+/+/raw)
+          |
+          v
+ Node.js backend (Express + ws)
+   - packet decode + processing
+   - SQLite persistence
+   - REST + WebSocket
+          |
+          v
+ React frontend (Vite + D3)
 ```
-MQTT broker (mqtt.eastmesh.au)
-       │  meshcore/+/+/raw + meshcore/+/+/packets
-       ▼
-  Node.js backend  ──── SQLite (data/mmv.db)
-  (Express + ws)   ──── WebSocket /ws
-       │
-       ▼
-  React frontend (D3 force graph)
-```
+
+## Repository layout
+
+- `src/` — backend (MQTT ingest, packet processing, DB, API, WS)
+- `client/src/` — frontend (graph rendering, panels, WS client)
+- `data/mmv.db` — runtime SQLite database (auto-created)
+
+## Requirements
+
+- Node.js 18+
+- npm
 
 ## Setup
 
 ```bash
-cp .env.example .env
-# Edit .env — set MQTT_URL, credentials if needed
-
 npm install
 cd client && npm install && cd ..
+cp .env.example .env
 ```
 
-## Run (development)
+Edit `.env` as needed (MQTT broker and auth).
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MQTT_URL` | `mqtt://mqtt.eastmesh.au:1883` | MQTT broker URL |
+| `MQTT_USERNAME` | _(unset)_ | Optional MQTT username |
+| `MQTT_PASSWORD` | _(unset)_ | Optional MQTT password |
+| `MQTT_CLIENT_ID` | `mmv-<random>` | MQTT client ID |
+| `MQTT_RAW_TOPIC` | `meshcore/+/+/raw` | MQTT topic for raw packets |
+| `MQTT_OBSERVERS` | _(unset)_ | Comma-separated observer public keys/prefixes to pre-create observer nodes |
+| `PORT` | `3001` | Backend HTTP/WebSocket port |
+| `DB_PATH` | `./data/mmv.db` | SQLite database path |
+
+## Development
+
+Run full stack:
 
 ```bash
 npm run dev
 ```
 
-This starts:
-- Backend API + WebSocket on **http://localhost:3001**
-- Vite dev server on **http://localhost:5173** (with proxy to backend)
+- Backend: `http://localhost:3001`
+- Frontend (Vite): `http://localhost:5173`
+- WebSocket: `ws://localhost:3001/ws`
 
-Open **http://localhost:5173** in your browser.
-
-## Run (production)
+Run individual parts:
 
 ```bash
-npm run build    # builds Vite frontend into client/dist/
-npm start        # serves everything from port 3001
+npm run dev:server
+npm run dev:client
 ```
 
-## Database
+## Production build and run
 
-SQLite at `data/mmv.db` (created automatically).
+```bash
+npm run build
+npm start
+```
 
-| Table | Contents |
-|-------|----------|
-| `nodes` | One row per unique 1-byte node hash; name + public key filled in from Adverts |
-| `edges` | Directed links between consecutive path hashes, with packet counts |
-| `adverts` | Raw Advert payloads — all historical node announcements |
-| `locations` | Lat/lon from Adverts — stored but **not** used for positioning |
+In production mode (`NODE_ENV=production`), the backend serves `client/dist`.
 
-## Node identification
+## Backend APIs
 
-MeshCore path hashes are the **first byte of a node's Ed25519 public key**.
-When an `Advert` packet is seen, its full public key + name is linked to the matching 1-byte hash.
+### REST
 
-## Environment variables
+- `GET /api/nodes` — all known nodes
+- `GET /api/edges` — all known edges
+- `GET /api/stats` — summary counts
+- `GET /api/graph` — `{ nodes, edges, stats }`
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MQTT_URL` | `mqtt://mqtt.eastmesh.au:1883` | MQTT broker URL |
-| `MQTT_USERNAME` | — | Optional auth |
-| `MQTT_PASSWORD` | — | Optional auth |
-| `MQTT_CLIENT_ID` | `mmv-<random>` | Client ID |
-| `MQTT_RAW_TOPIC` | `meshcore/+/+/raw` | Raw MQTT topic filter. Messages from this stream are decoded via `meshcore-decoder`. |
-| `MQTT_PACKETS_TOPIC` | `meshcore/+/+/packets` | Pre-decoded packet topic filter. Path data is read directly from JSON payloads (no `meshcore-decoder` call). |
-| `MQTT_OBSERVERS` | — | Optional comma-separated observer public keys/prefixes to pre-populate as nodes at MQTT connect (e.g. `0xA1B2...,7E76...`) |
-| `PORT` | `3001` | HTTP/WS server port |
-| `DB_PATH` | `./data/mmv.db` | SQLite file path |
+### WebSocket (`/ws`)
+
+Message types:
+
+- `init` — full graph + stats snapshot on connect
+- `node` — incremental node update
+- `edge` — incremental edge update
+- `stats` — periodic stats broadcast
+- `packet` — packet activity event (`packetType`, `hash`, `pathLen`)
+- `debug` — backend log events (`info`/`warn`/`error`)
+
+## Data model
+
+SQLite tables:
+
+- `nodes` — canonical hash nodes + metadata (`name`, `public_key`, role, counters)
+- `edges` — directed path links with counters and timestamps
+- `adverts` — historical advert records
+- `locations` — advert location data (stored, not used for graph layout)
+
+## Packet processing behavior
+
+- Raw payloads are decoded with `@michaelhart/meshcore-decoder`
+- Path hops produce node touches and directed edge touches
+- Observer key from MQTT topic is normalized and linked as final hop when applicable
+- `Advert` packets enrich node metadata and may add an advert→path edge when needed
+- Invalid/malformed packets are ignored safely
+
+## Notes
+
+- Node hashes are normalized to lowercase 2-char hex strings.
+- Graph layout is force-directed and not geospatial (location data is persisted only).
