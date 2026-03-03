@@ -5,9 +5,8 @@ import { touchNode } from './db.js';
 import { hashFromKeyPrefix } from './hash-utils.js';
 
 const MQTT_URL = process.env.MQTT_URL ?? 'mqtt://mqtt.eastmesh.au:1883';
-const MQTT_TOPIC = process.env.MQTT_TOPIC ?? process.env.MQTT_RAW_TOPIC ?? 'meshcore/+/+/packets';
+const MQTT_TOPIC = process.env.MQTT_TOPIC ?? 'meshcore/+/+/packets';
 
-let packetCount = 0;
 let statsTimer: ReturnType<typeof setInterval> | null = null;
 
 function prepopulateObserverNodes(): void {
@@ -104,11 +103,9 @@ export function startMqtt(): mqtt.MqttClient {
 
     if (!result) return;
 
-    packetCount++;
-
     for (const node of result.nodes) broadcastNode(node);
     for (const edge of result.edges) broadcastEdge(edge);
-    broadcastPacket(result.packetType, result.hash, result.edges.length, result.path, duration);
+    broadcastPacket(result.packetType, result.hash, result.path.length, result.path, duration);
   });
 
   statsTimer = setInterval(() => {
