@@ -76,6 +76,7 @@ export function startMqtt(): mqtt.MqttClient {
     }
 
     let result = null;
+    let duration: number | null = null;
 
     if (streamType === 'packets') {
       let envelope: Record<string, unknown>;
@@ -93,6 +94,9 @@ export function startMqtt(): mqtt.MqttClient {
       }
 
       result = processPacket(raw, observerKey);
+      const durationRaw = envelope.duration;
+      duration = typeof durationRaw === 'string' ? Number(durationRaw) : (typeof durationRaw === 'number' ? durationRaw : null);
+      if (duration !== null && !Number.isFinite(duration)) duration = null;
     } else {
       debugLog.info(`[mqtt] skipping unsupported stream: ${topic}`);
       return;
@@ -104,7 +108,7 @@ export function startMqtt(): mqtt.MqttClient {
 
     for (const node of result.nodes) broadcastNode(node);
     for (const edge of result.edges) broadcastEdge(edge);
-    broadcastPacket(result.packetType, result.hash, result.edges.length);
+    broadcastPacket(result.packetType, result.hash, result.edges.length, result.path, duration);
   });
 
   statsTimer = setInterval(() => {

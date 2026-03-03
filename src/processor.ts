@@ -9,6 +9,7 @@ export interface ProcessResult {
   edges: EdgeRow[];
   packetType: string;
   hash: string;
+  path: string[];
 }
 
 const PAYLOAD_TYPE_NAMES: Record<number, string> = {
@@ -163,6 +164,7 @@ export function processPacket(hex: string, observerKey?: string): ProcessResult 
     edges: updatedEdges,
     packetType,
     hash: packet.messageHash,
+    path,
   };
 }
 
@@ -197,5 +199,5 @@ export function processDecodedPacket(raw: Buffer | string, observerKey?: string)
   const now = Date.now();
   const { nodes, edges } = applyPathAndObserver(path, observerKey, now);
 
-  return { nodes, edges, packetType, hash };
+  return { nodes, edges, packetType, hash, path };
 }
