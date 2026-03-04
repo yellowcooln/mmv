@@ -351,8 +351,9 @@ export function NetworkGraph3D({
           linkColor={linkColorCb}
           linkOpacity={settings.threeDLinkOpacity}
           onNodeClick={(node) => {
-            const graphNode = node as GraphNode;
-            onSelect(graphNode.hash === selectedId ? null : graphNode.hash);
+            // Always select the clicked node. If it was already selected the
+            // parent will re-open the panel rather than deselecting.
+            onSelect((node as GraphNode).hash);
           }}
           onBackgroundClick={() => onSelect(null)}
           // nodeThreeObjectExtend keeps the default coloured sphere and adds the
