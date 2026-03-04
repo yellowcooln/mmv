@@ -11,6 +11,9 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   settings: GraphSettings;
+  /** Bumping this number triggers a camera fly to focusNodeId. */
+  focusKey?: number;
+  focusNodeId?: string | null;
 }
 
 interface GraphNode extends NodeData {
@@ -20,15 +23,22 @@ interface GraphNode extends NodeData {
 }
 
 interface GraphLink {
-  source: string;
-  target: string;
+  source: string | GraphNode;
+  target: string | GraphNode;
 }
 
 function nodeColor(node: NodeData): string {
   return ROLE_COLORS[node.device_role] ?? ROLE_COLORS[0];
 }
 
-export function NetworkGraph3D({ nodes, edges, selectedId, onSelect, settings }: Props) {
+function linkEndId(end: string | number | GraphNode | object): string {
+  if (end && typeof end === 'object') return (end as GraphNode).id;
+  return String(end);
+}
+
+export function NetworkGraph3D({
+  nodes, edges, selectedId, onSelect, settings, focusKey, focusNodeId,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(null);
   const nodeMapRef = useRef(new Map<string, GraphNode>());
@@ -36,6 +46,15 @@ export function NetworkGraph3D({ nodes, edges, selectedId, onSelect, settings }:
   // SpriteText cache: avoids recreating 200+ Three.js objects on every data update.
   const spriteMapRef = useRef(new Map<string, SpriteText>());
   const [size, setSize] = useState({ width: 0, height: 0 });
+
+  // Kept current in render so the orbit animation closure never goes stale.
+  const graphDataRef = useRef<{ nodes: GraphNode[]; links: GraphLink[] }>({ nodes: [], links: [] });
+  const selectedIdRef = useRef(selectedId);
+
+  // Orbit animation state
+  const orbitRafRef = useRef<number | null>(null);
+  const orbitingRef = useRef(false);
+  const orbitAngleRef = useRef<number | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -50,7 +69,6 @@ export function NetworkGraph3D({ nodes, edges, selectedId, onSelect, settings }:
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
-
 
   const graphData = useMemo(() => {
     const nextNodeMap = new Map<string, GraphNode>();
@@ -101,25 +119,123 @@ export function NetworkGraph3D({ nodes, edges, selectedId, onSelect, settings }:
     };
   }, [nodes, edges, settings.minNodeRadius]);
 
+  // Keep refs current so orbit closure always sees the latest positions and selection.
+  graphDataRef.current = graphData;
+  // Reset orbit angle when selection changes so the camera re-initialises from
+  // its current position instead of jumping to a stale angle.
+  if (selectedIdRef.current !== selectedId) {
+    orbitAngleRef.current = null;
+  }
+  selectedIdRef.current = selectedId;
+
   // Degree-weighted repulsion: high-degree hub nodes repel harder, pushing them
   // outward to form the skeleton while leaf nodes stay near their hub.
+  // chargeStrength is the strength at the most-connected node; leaf nodes get ~1/3 of that.
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
     const degreeMap = new Map<string, number>();
     for (const link of graphData.links) {
-      const s = typeof link.source === 'object' ? (link.source as GraphNode).id : link.source as string;
-      const t = typeof link.target === 'object' ? (link.target as GraphNode).id : link.target as string;
+      const s = linkEndId(link.source);
+      const t = linkEndId(link.target);
       degreeMap.set(s, (degreeMap.get(s) ?? 0) + 1);
       degreeMap.set(t, (degreeMap.get(t) ?? 0) + 1);
     }
     const maxDegree = Math.max(1, ...degreeMap.values());
     fg.d3Force('charge')?.strength((node: { id: string }) => {
       const degree = degreeMap.get(node.id) ?? 0;
-      return -30 * (1 + 2 * (degree / maxDegree));
+      return settings.chargeStrength * (1 + 2 * (degree / maxDegree)) / 3;
     });
     fg.d3ReheatSimulation();
-  }, [graphData.links]);
+  }, [graphData.links, settings.chargeStrength]);
+
+  // Wire link distance and strength into the 3D force simulation.
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force('link')?.distance(settings.linkDistance).strength(settings.linkStrength);
+    fg.d3ReheatSimulation();
+  }, [settings.linkDistance, settings.linkStrength]);
+
+  // Fly camera to a focused node when focusKey changes.
+  useEffect(() => {
+    if (!focusNodeId || !focusKey) return;
+    const fg = fgRef.current;
+    if (!fg) return;
+    const node = nodeMapRef.current.get(focusNodeId) as any;
+    if (!node) return;
+    const { x = 0, y = 0, z = 0 } = node;
+    fg.cameraPosition(
+      { x, y: y + 50, z: z + 200 },
+      { x, y, z },
+      1000,
+    );
+  }, [focusKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Orbit: slowly rotate camera around the centroid of all nodes.
+  useEffect(() => {
+    if (!settings.orbit) {
+      orbitingRef.current = false;
+      orbitAngleRef.current = null;
+      if (orbitRafRef.current !== null) {
+        cancelAnimationFrame(orbitRafRef.current);
+        orbitRafRef.current = null;
+      }
+      return;
+    }
+
+    orbitingRef.current = true;
+
+    const animate = () => {
+      if (!orbitingRef.current) return;
+
+      const fg = fgRef.current;
+      const gd = graphDataRef.current;
+
+      if (fg && gd.nodes.length > 0) {
+        const ns = gd.nodes as any[];
+        // When a node is selected orbit around it; otherwise use the cluster centroid.
+        const sel = selectedIdRef.current
+          ? (ns.find((n: any) => n.id === selectedIdRef.current) ?? null)
+          : null;
+        const cx = sel ? (sel.x ?? 0) : ns.reduce((s: number, n: any) => s + (n.x ?? 0), 0) / ns.length;
+        const cy = sel ? (sel.y ?? 0) : ns.reduce((s: number, n: any) => s + (n.y ?? 0), 0) / ns.length;
+        const cz = sel ? (sel.z ?? 0) : ns.reduce((s: number, n: any) => s + (n.z ?? 0), 0) / ns.length;
+
+        const cam = fg.camera();
+        const dx = cam.position.x - cx;
+        const dz = cam.position.z - cz;
+
+        // Initialise angle from the camera's current position to avoid a jump.
+        if (orbitAngleRef.current === null) {
+          orbitAngleRef.current = Math.atan2(dx, dz);
+        }
+
+        const radius = Math.sqrt(dx * dx + dz * dz) || 400;
+        orbitAngleRef.current += 0.004; // ~0.23° per frame at 60 fps
+        const angle = orbitAngleRef.current;
+
+        fg.cameraPosition(
+          { x: cx + radius * Math.sin(angle), y: cam.position.y, z: cz + radius * Math.cos(angle) },
+          { x: cx, y: cy, z: cz },
+          0,
+        );
+      }
+
+      orbitRafRef.current = requestAnimationFrame(animate);
+    };
+
+    orbitRafRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      orbitingRef.current = false;
+      orbitAngleRef.current = null;
+      if (orbitRafRef.current !== null) {
+        cancelAnimationFrame(orbitRafRef.current);
+        orbitRafRef.current = null;
+      }
+    };
+  }, [settings.orbit]);
 
   return (
     <div ref={containerRef} className="flex-1 relative overflow-hidden" style={{ minHeight: 0 }}>
@@ -139,12 +255,22 @@ export function NetworkGraph3D({ nodes, edges, selectedId, onSelect, settings }:
             return graphNode.hash === selectedId ? '#fbbf24' : graphNode.color;
           }}
           nodeRelSize={3}
-          linkWidth={1.5}
-          linkColor={() => '#2563eb'}
+          linkWidth={(link) => {
+            if (!selectedId) return 1.5;
+            const s = linkEndId((link as GraphLink).source);
+            const t = linkEndId((link as GraphLink).target);
+            return s === selectedId || t === selectedId ? 3.5 : 1;
+          }}
+          linkColor={(link) => {
+            if (!selectedId) return '#2563eb';
+            const s = linkEndId((link as GraphLink).source);
+            const t = linkEndId((link as GraphLink).target);
+            return s === selectedId || t === selectedId ? '#fbbf24' : '#1e3558';
+          }}
           linkOpacity={settings.threeDLinkOpacity}
           onNodeClick={(node) => {
             const graphNode = node as GraphNode;
-            onSelect(graphNode.hash);
+            onSelect(graphNode.hash === selectedId ? null : graphNode.hash);
           }}
           onBackgroundClick={() => onSelect(null)}
           // nodeThreeObjectExtend keeps the default coloured sphere and adds the
@@ -157,7 +283,10 @@ export function NetworkGraph3D({ nodes, edges, selectedId, onSelect, settings }:
             let sprite = spriteMapRef.current.get(graphNode.hash);
             if (!sprite || sprite.text !== label || sprite.textHeight !== settings.threeDLabelSize) {
               sprite = new SpriteText(label);
-              sprite.color = '#9ca3af';
+              sprite.color = '#ffffff';
+              sprite.backgroundColor = 'rgba(0,0,0,0.55)';
+              sprite.padding = 1.5;
+              sprite.borderRadius = 2;
               sprite.textHeight = settings.threeDLabelSize;
               spriteMapRef.current.set(graphNode.hash, sprite);
             }

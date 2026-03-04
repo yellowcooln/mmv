@@ -14,6 +14,7 @@ export interface GraphSettings {
   mode: '2d' | '3d';
   threeDLinkOpacity: number;
   threeDLabelSize: number;
+  orbit: boolean;
 }
 
 interface Props {
