@@ -7,6 +7,7 @@ import { PacketLog } from './components/PacketLog';
 import { DebugPanel } from './components/DebugPanel';
 import { useWebSocket } from './hooks/useWebSocket';
 import type { NodeData } from './types';
+import { ROLE_COLORS } from './types';
 
 const isDev = window.location.port === '5173';
 const WS_URL = isDev
@@ -31,6 +32,7 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
 export default function App() {
   const { nodes, edges, stats, recentPackets, debugLogs, connected } = useWebSocket(WS_URL);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [showVizControls, setShowVizControls] = useState(false);
   const [graphSettings, setGraphSettings] = useState<GraphSettings>(DEFAULT_GRAPH_SETTINGS);
@@ -56,6 +58,12 @@ export default function App() {
   const selectedNode: NodeData | null =
     selectedId != null ? (nodes.find((n) => n.hash === selectedId) ?? null) : null;
 
+  // Selecting a node always opens the panel; passing null clears both.
+  const handleSelect = (hash: string | null) => {
+    setSelectedId(hash);
+    setPanelOpen(hash !== null);
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-950 text-gray-100">
       {/* Top stats bar */}
@@ -69,7 +77,7 @@ export default function App() {
             nodes={nodes}
             edges={edges}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={handleSelect}
             settings={graphSettings}
             focusNodeId={focusNodeId}
             focusKey={focusKey}
@@ -79,7 +87,7 @@ export default function App() {
             nodes={nodes}
             edges={edges}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={handleSelect}
             settings={graphSettings}
           />
         )}
@@ -89,7 +97,7 @@ export default function App() {
           <NodeSearch
             nodes={nodes}
             onSelect={(hash) => {
-              setSelectedId(hash);
+              handleSelect(hash);
               setFocusNodeId(hash);
               setFocusKey((k) => k + 1);
             }}
@@ -261,12 +269,39 @@ export default function App() {
         </div>
 
         {/* Node detail panel */}
-        {selectedNode && (
+        {selectedNode && panelOpen && (
           <NodePanel
             node={selectedNode}
             edges={edges}
-            onClose={() => setSelectedId(null)}
+            onClose={() => setPanelOpen(false)}
           />
+        )}
+
+        {/* Selection chip — visible when a node is selected but the panel is closed */}
+        {selectedNode && !panelOpen && (
+          <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-900/95 backdrop-blur px-3 py-2 text-xs font-mono shadow-xl">
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: ROLE_COLORS[selectedNode.device_role] ?? ROLE_COLORS[0] }}
+            />
+            <span className="text-gray-100 max-w-[140px] truncate">
+              {selectedNode.name ?? selectedNode.hash.toUpperCase()}
+            </span>
+            <button
+              onClick={() => setPanelOpen(true)}
+              className="text-purple-400 hover:text-purple-300 transition-colors ml-1"
+              title="View details"
+            >
+              ↗
+            </button>
+            <button
+              onClick={() => handleSelect(null)}
+              className="text-gray-500 hover:text-gray-300 transition-colors text-base leading-none ml-0.5"
+              title="Clear selection"
+            >
+              ×
+            </button>
+          </div>
         )}
       </div>
 
