@@ -8,6 +8,18 @@ import { initWss, debugLog } from './ws-broadcast.js';
 import { startMqtt, stopMqtt } from './mqtt-client.js';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
+const MQTT_URL = process.env.MQTT_URL ?? 'mqtt://mqtt.eastmesh.au:1883';
+
+function defaultMqttDisplayName(mqttUrl: string): string {
+  try {
+    return new URL(mqttUrl).hostname || mqttUrl;
+  } catch {
+    return mqttUrl;
+  }
+}
+
+const MQTT_DISPLAY_NAME =
+  process.env.MQTT_DISPLAY_NAME?.trim() || defaultMqttDisplayName(MQTT_URL);
 const app = express();
 
 app.use(cors());
@@ -29,6 +41,10 @@ app.get('/api/stats', (_req, res) => {
 
 app.get('/api/graph', (_req, res) => {
   res.json({ nodes: getAllNodes(), edges: getAllEdges(), stats: getStats() });
+});
+
+app.get('/api/config', (_req, res) => {
+  res.json({ mqttDisplayName: MQTT_DISPLAY_NAME });
 });
 
 // Serve built frontend (production only — in dev, Vite serves the client)

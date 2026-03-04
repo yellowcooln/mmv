@@ -21,7 +21,7 @@ It listens to MeshCore packets from MQTT, infers node/edge relationships from pa
 
 ```text
 MQTT broker
-   (meshcore/+/+/raw)
+   (meshcore/+/+/(raw|packets))
           |
           v
  Node.js backend (Express + ws)
@@ -41,7 +41,7 @@ MQTT broker
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22+
 - npm
 
 ## Setup
@@ -62,8 +62,9 @@ Edit `.env` as needed (MQTT broker and auth).
 | `MQTT_USERNAME` | _(unset)_ | Optional MQTT username |
 | `MQTT_PASSWORD` | _(unset)_ | Optional MQTT password |
 | `MQTT_CLIENT_ID` | `mmv-<random>` | MQTT client ID |
-| `MQTT_RAW_TOPIC` | `meshcore/+/+/raw` | MQTT topic for raw packets |
+| `MQTT_RAW_TOPIC` | `meshcore/+/+/raw` | MQTT topic filter (supports `.../raw` and `.../packets` streams) |
 | `MQTT_OBSERVERS` | _(unset)_ | Comma-separated observer public keys/prefixes to pre-create observer nodes |
+| `MQTT_DISPLAY_NAME` | _(unset)_ | Optional UI broker label override (defaults to `MQTT_URL` hostname) |
 | `PORT` | `3001` | Backend HTTP/WebSocket port |
 | `DB_PATH` | `./data/mmv.db` | SQLite database path |
 
@@ -103,6 +104,7 @@ In production mode (`NODE_ENV=production`), the backend serves `client/dist`.
 - `GET /api/edges` — all known edges
 - `GET /api/stats` — summary counts
 - `GET /api/graph` — `{ nodes, edges, stats }`
+- `GET /api/config` — `{ mqttDisplayName }` for UI broker label display
 
 ### WebSocket (`/ws`)
 
@@ -126,7 +128,8 @@ SQLite tables:
 
 ## Packet processing behavior
 
-- Raw payloads are decoded with `@michaelhart/meshcore-decoder`
+- `raw` payloads are decoded from hex with `@michaelhart/meshcore-decoder`
+- `packets` payloads are accepted as hex or decoded JSON packets with a path array
 - Path hops produce node touches and directed edge touches
 - Observer key from MQTT topic is normalized and linked as final hop when applicable
 - `Advert` packets enrich node metadata and may add an advert→path edge when needed

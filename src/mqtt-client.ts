@@ -1,5 +1,5 @@
 import mqtt from 'mqtt';
-import { extractHex, processPacket } from './processor.js';
+import { extractHex, processDecodedPacket, processPacket } from './processor.js';
 import { broadcastNode, broadcastEdge, broadcastStats, broadcastPacket, debugLog } from './ws-broadcast.js';
 import { touchNode } from './db.js';
 import { hashFromKeyPrefix } from './hash-utils.js';
@@ -81,6 +81,13 @@ export function startMqtt(): mqtt.MqttClient {
       const hex = extractHex(payload);
       if (!hex) return;
       result = processPacket(hex, observerKey);
+    } else if (streamType === 'packets') {
+      const hex = extractHex(payload);
+      if (hex) {
+        result = processPacket(hex, observerKey);
+      } else {
+        result = processDecodedPacket(payload, observerKey);
+      }
     } else {
       debugLog.info(`[mqtt] skipping unsupported stream: ${topic}`);
       return;
