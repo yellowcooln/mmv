@@ -8,7 +8,7 @@ import { initWss, debugLog } from './ws-broadcast.js';
 import { startMqtt, stopMqtt } from './mqtt-client.js';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
-const MQTT_URL_FOR_DISPLAY = process.env.MQTT_URL ?? 'mqtt://mqtt.eastmesh.au:1883';
+const MQTT_URL_FOR_DISPLAY = process.env.MQTT_URL ?? 'mqtt://mqtt.example.com:1883';
 
 function getMqttDisplayName(): string {
   if (process.env.MQTT_DISPLAY_NAME) return process.env.MQTT_DISPLAY_NAME;

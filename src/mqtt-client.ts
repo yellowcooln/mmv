@@ -4,7 +4,7 @@ import { broadcastNode, broadcastEdge, broadcastStats, broadcastPacket, debugLog
 import { touchNode } from './db.js';
 import { hashFromKeyPrefix } from './hash-utils.js';
 
-const MQTT_URL = process.env.MQTT_URL ?? 'mqtt://mqtt.eastmesh.au:1883';
+const MQTT_URL = process.env.MQTT_URL ?? 'mqtt://mqtt.example.com:1883';
 const MQTT_TOPIC = process.env.MQTT_TOPIC ?? 'meshcore/+/+/packets';
 
 let statsTimer: ReturnType<typeof setInterval> | null = null;
