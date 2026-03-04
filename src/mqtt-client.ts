@@ -65,8 +65,8 @@ export function startMqtt(): mqtt.MqttClient {
     debugLog.info(`[mqtt] message on ${topic} (${payload.length} bytes)`);
 
     const parts = topic.split('/');
-    const observerKey = parts[2] ?? undefined;
-    const streamType = parts[3] ?? '';
+    const streamType = parts[parts.length - 1] ?? '';
+    const observerKey = parts.length >= 2 ? parts[parts.length - 2] : undefined;
 
     const observerHash = observerKey ? hashFromKeyPrefix(observerKey) : null;
     if (observerHash) {
