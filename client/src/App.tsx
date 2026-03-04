@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { NetworkGraph, type GraphSettings } from './components/NetworkGraph';
 import { NetworkGraph3D } from './components/NetworkGraph3D';
 import { NodePanel } from './components/NodePanel';
@@ -25,6 +25,7 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   mode: '3d',
   threeDLinkOpacity: 0.55,
   threeDLabelSize: 6,
+  orbit: false,
 };
 
 export default function App() {
@@ -34,6 +35,9 @@ export default function App() {
   const [showVizControls, setShowVizControls] = useState(false);
   const [graphSettings, setGraphSettings] = useState<GraphSettings>(DEFAULT_GRAPH_SETTINGS);
   const [mqttDisplayName, setMqttDisplayName] = useState('…');
+  // focusKey bumps each time we want the 3D camera to fly to focusNodeId.
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const [focusKey, setFocusKey] = useState(0);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/config`)
@@ -67,6 +71,8 @@ export default function App() {
             selectedId={selectedId}
             onSelect={setSelectedId}
             settings={graphSettings}
+            focusNodeId={focusNodeId}
+            focusKey={focusKey}
           />
         ) : (
           <NetworkGraph
@@ -77,6 +83,18 @@ export default function App() {
             settings={graphSettings}
           />
         )}
+
+        {/* Node search — top-centre */}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-72">
+          <NodeSearch
+            nodes={nodes}
+            onSelect={(hash) => {
+              setSelectedId(hash);
+              setFocusNodeId(hash);
+              setFocusKey((k) => k + 1);
+            }}
+          />
+        </div>
 
         {/* Visualization controls */}
         <div className="absolute top-3 left-3 z-30">
@@ -161,6 +179,12 @@ export default function App() {
                     label="Show labels"
                     checked={graphSettings.showLabels}
                     onChange={(checked) => setGraphSettings(s => ({ ...s, showLabels: checked }))}
+                  />
+
+                  <ToggleControl
+                    label="Orbit mode"
+                    checked={graphSettings.orbit}
+                    onChange={(checked) => setGraphSettings(s => ({ ...s, orbit: checked }))}
                   />
                 </>
               ) : (
@@ -278,6 +302,71 @@ export default function App() {
                 : 'Connecting to backend…'}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface NodeSearchProps {
+  nodes: NodeData[];
+  onSelect: (hash: string) => void;
+}
+
+function NodeSearch({ nodes, onSelect }: NodeSearchProps) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const results = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return [];
+    return nodes
+      .filter((n) =>
+        n.name?.toLowerCase().startsWith(q) ||
+        n.hash.toLowerCase().startsWith(q)
+      )
+      .slice(0, 6);
+  }, [query, nodes]);
+
+  // Close dropdown when clicking outside.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <input
+        type="text"
+        placeholder="Search nodes by name or prefix…"
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        className="w-full rounded border border-gray-600 bg-gray-900/95 backdrop-blur px-3 py-1.5 text-xs font-mono text-gray-100 placeholder-gray-500 outline-none focus:border-purple-500 shadow-lg"
+      />
+      {open && results.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 rounded border border-gray-700 bg-gray-900/98 shadow-2xl overflow-hidden z-50">
+          {results.map((n) => (
+            <button
+              key={n.hash}
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-mono hover:bg-gray-700 text-left"
+              onMouseDown={(e) => {
+                e.preventDefault(); // prevent blur before click
+                onSelect(n.hash);
+                setQuery(n.name ?? n.hash.toUpperCase());
+                setOpen(false);
+              }}
+            >
+              <span className="text-gray-100 truncate">{n.name ?? '—'}</span>
+              <span className="text-gray-500 ml-2 shrink-0">{n.hash.toUpperCase()}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>
