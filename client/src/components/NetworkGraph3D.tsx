@@ -49,6 +49,7 @@ export function NetworkGraph3D({
 
   // Kept current in render so the orbit animation closure never goes stale.
   const graphDataRef = useRef<{ nodes: GraphNode[]; links: GraphLink[] }>({ nodes: [], links: [] });
+  const selectedIdRef = useRef(selectedId);
 
   // Orbit animation state
   const orbitRafRef = useRef<number | null>(null);
@@ -118,8 +119,14 @@ export function NetworkGraph3D({
     };
   }, [nodes, edges, settings.minNodeRadius]);
 
-  // Keep the ref current so orbit closure always sees the latest node positions.
+  // Keep refs current so orbit closure always sees the latest positions and selection.
   graphDataRef.current = graphData;
+  // Reset orbit angle when selection changes so the camera re-initialises from
+  // its current position instead of jumping to a stale angle.
+  if (selectedIdRef.current !== selectedId) {
+    orbitAngleRef.current = null;
+  }
+  selectedIdRef.current = selectedId;
 
   // Degree-weighted repulsion: high-degree hub nodes repel harder, pushing them
   // outward to form the skeleton while leaf nodes stay near their hub.
@@ -187,9 +194,13 @@ export function NetworkGraph3D({
 
       if (fg && gd.nodes.length > 0) {
         const ns = gd.nodes as any[];
-        const cx = ns.reduce((s: number, n: any) => s + (n.x ?? 0), 0) / ns.length;
-        const cy = ns.reduce((s: number, n: any) => s + (n.y ?? 0), 0) / ns.length;
-        const cz = ns.reduce((s: number, n: any) => s + (n.z ?? 0), 0) / ns.length;
+        // When a node is selected orbit around it; otherwise use the cluster centroid.
+        const sel = selectedIdRef.current
+          ? (ns.find((n: any) => n.id === selectedIdRef.current) ?? null)
+          : null;
+        const cx = sel ? (sel.x ?? 0) : ns.reduce((s: number, n: any) => s + (n.x ?? 0), 0) / ns.length;
+        const cy = sel ? (sel.y ?? 0) : ns.reduce((s: number, n: any) => s + (n.y ?? 0), 0) / ns.length;
+        const cz = sel ? (sel.z ?? 0) : ns.reduce((s: number, n: any) => s + (n.z ?? 0), 0) / ns.length;
 
         const cam = fg.camera();
         const dx = cam.position.x - cx;
