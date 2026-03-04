@@ -36,6 +36,7 @@ export default function App() {
 const [showVizControls, setShowVizControls] = useState(false);
   const [graphSettings, setGraphSettings] = useState<GraphSettings>(DEFAULT_GRAPH_SETTINGS);
   const [mqttDisplayName, setMqttDisplayName] = useState('…');
+  const [geoEnabled, setGeoEnabled] = useState(true);
   const [geoCenter, setGeoCenter] = useState<{ lat: number; lng: number } | null>(null);
   // focusKey bumps each time we want the 3D camera to fly to focusNodeId.
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
@@ -44,8 +45,9 @@ const [showVizControls, setShowVizControls] = useState(false);
   useEffect(() => {
     fetch(`${API_BASE}/api/config`)
       .then(r => r.json())
-      .then((d: { mqttDisplayName: string; geoCenter: { lat: number; lng: number } | null }) => {
+      .then((d: { mqttDisplayName: string; geoEnabled: boolean; geoCenter: { lat: number; lng: number } | null }) => {
         setMqttDisplayName(d.mqttDisplayName);
+        setGeoEnabled(d.geoEnabled);
         if (d.geoCenter) setGeoCenter(d.geoCenter);
       })
       .catch(() => {});
@@ -61,7 +63,14 @@ const [showVizControls, setShowVizControls] = useState(false);
   const selectedNode: NodeData | null =
     selectedId != null ? (nodes.find((n) => n.hash === selectedId) ?? null) : null;
 
-  const hasGeoNodes = nodes.some((n) => n.latitude != null);
+  // When geo is disabled, strip lat/lng so projectGeo returns empty everywhere
+  // and the Geo influence slider stays hidden — no changes needed in child components.
+  const effectiveNodes = useMemo(
+    () => geoEnabled ? nodes : nodes.map((n) => ({ ...n, latitude: null, longitude: null })),
+    [nodes, geoEnabled],
+  );
+
+  const hasGeoNodes = effectiveNodes.some((n) => n.latitude != null);
 
   // Selecting a node always opens the panel; passing null clears both.
   const handleSelect = (hash: string | null) => {
@@ -79,7 +88,7 @@ const [showVizControls, setShowVizControls] = useState(false);
         {/* Graph */}
         {graphSettings.mode === '3d' ? (
           <NetworkGraph3D
-            nodes={nodes}
+            nodes={effectiveNodes}
             edges={edges}
             selectedId={selectedId}
             onSelect={handleSelect}
@@ -90,7 +99,7 @@ const [showVizControls, setShowVizControls] = useState(false);
           />
         ) : (
           <NetworkGraph
-            nodes={nodes}
+            nodes={effectiveNodes}
             edges={edges}
             selectedId={selectedId}
             onSelect={handleSelect}

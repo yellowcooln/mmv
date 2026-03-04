@@ -1,5 +1,33 @@
 # Versions
 
+## [1.1.0] – 2026-03-04
+
+### Added
+- Geographic layout influence: node lat/lng (from MeshCore advert packets) is now
+  sent to the frontend and used to influence the force-directed graph layout
+- Geo-seeded initial positions — new nodes are placed at their projected geographic
+  coordinates rather than random scatter, giving the simulation a geographically
+  informed starting point
+- `forceX`/`forceY` geo-attraction forces pull located nodes gently toward their
+  projected position; configurable via a **Geo influence** slider (0–0.3) in Viz
+  Settings (only shown when at least one node has location data)
+- `CENTER_LAT` / `CENTER_LON` env vars pin the geo projection to a fixed reference
+  point instead of the computed centroid; useful when monitoring a known area so
+  the layout stays stable as new edge nodes appear
+- `GEO_ENABLED=false` env var disables all geographic positioning entirely —
+  hides the slider, skips geo seeding, and restores pure topology-driven layout
+
+### Changed
+- Geo projection centre defaults to the **centroid** (mean lat/lng) of all located
+  nodes rather than the bounding-box midpoint — a single outlier no longer skews
+  the whole layout
+- Debug button and panel removed from the UI
+
+### Fixed
+- Indentation inconsistency in `App.tsx` state declarations
+
+---
+
 ## [1.0.0] – 2026-03-04
 
 ### Added
