@@ -133,6 +133,9 @@ export function NetworkGraph3D({ nodes, edges, selectedId, onSelect, settings }:
             onSelect(graphNode.hash);
           }}
           onBackgroundClick={() => onSelect(null)}
+          // nodeThreeObjectExtend keeps the default coloured sphere and adds the
+          // sprite as a child above it, rather than replacing the sphere entirely.
+          nodeThreeObjectExtend={settings.showLabels}
           nodeThreeObject={settings.showLabels ? (node: object) => {
             const graphNode = node as GraphNode;
             const label = graphNode.name ?? graphNode.hash.toUpperCase();
@@ -144,6 +147,8 @@ export function NetworkGraph3D({ nodes, edges, selectedId, onSelect, settings }:
               sprite.textHeight = settings.threeDLabelSize;
               spriteMapRef.current.set(graphNode.hash, sprite);
             }
+            // Position label above the sphere. Sphere radius ≈ nodeRelSize * ∛val = 3 * ∛(minNodeRadius/2).
+            sprite.position.y = 3 * Math.cbrt(settings.minNodeRadius / 2) + 3;
             return sprite;
           } : undefined}
           // warmupTicks runs the simulation silently before first render so the graph
