@@ -267,7 +267,12 @@ export function NetworkGraph3DCustom({
         sim.tick(100);
         sim.restart(); // continue cooling down asynchronously
       } else {
-        sim.alpha(Math.max(sim.alpha(), 0.3)).restart();
+        // New nodes need more energy to find a stable position; new edges between
+        // already-known nodes only need a gentle nudge so they don't cause visible
+        // twitching across the whole graph.
+        const hasNewNodes = nodeFp !== prevNodeFp;
+        const reheatAlpha = hasNewNodes ? 0.2 : 0.05;
+        sim.alpha(Math.max(sim.alpha(), reheatAlpha)).restart();
       }
 
       // Full topology rebuild in renderer (new index maps, edge geometry, labels).

@@ -25,7 +25,7 @@ const _col = new THREE.Color();
 const COL_EDGE_DEFAULT = new THREE.Color(0x2563eb);
 const COL_EDGE_SEL     = new THREE.Color(0xfbbf24);
 const COL_EDGE_DIM     = new THREE.Color(0x1e3558);
-const COL_EDGE_PKT     = new THREE.Color(0x4ade80); // bright green — active packet path
+const COL_EDGE_PKT     = new THREE.Color(0xffffff); // white — active packet path (max contrast)
 
 export interface SimNode {
   id: string;
@@ -103,6 +103,8 @@ export class MeshRenderer {
   private packetHitSet = new Set<string>();
   /** last selectedId passed to updateColors — kept so setPacketHits can redraw */
   private currentSelectedId: string | null = null;
+  /** user-configured opacity, restored when packet hits are cleared */
+  private baseEdgeOpacity = 0.55;
 
   // ---- Labels (individual Sprites, one per node) ----
   private labelMap = new Map<string, THREE.Sprite>();
@@ -332,11 +334,18 @@ export class MeshRenderer {
    */
   setPacketHits(hits: Set<string>) {
     this.packetHitSet = hits;
+    // Boost edge opacity while any trace is active so the white lines are clearly
+    // visible; restore to the user-configured value once all traces expire.
+    this.edgeMaterial.opacity = hits.size > 0 ? Math.max(this.baseEdgeOpacity, 0.85) : this.baseEdgeOpacity;
     this.writeEdgeColors(this.currentSelectedId);
   }
 
   setLinkOpacity(opacity: number) {
-    this.edgeMaterial.opacity = opacity;
+    this.baseEdgeOpacity = opacity;
+    // If a packet trace is active keep the boosted opacity; otherwise apply directly.
+    if (this.packetHitSet.size === 0) {
+      this.edgeMaterial.opacity = opacity;
+    }
   }
 
   setLabelsVisible(visible: boolean) {
