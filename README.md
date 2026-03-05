@@ -1,6 +1,6 @@
-# MMV — Mesh MQTT Visualizer
+# MeshCore MQTT Visualiser
 
-MMV is a real-time MeshCore topology visualizer.
+MeshCore MQTT Visualiser is a real-time MeshCore topology visualiser.
 
 It listens to MeshCore packets from MQTT, infers node/edge relationships from path hops, stores state in SQLite, and streams live updates to a React UI over WebSocket.
 
@@ -16,6 +16,8 @@ It listens to MeshCore packets from MQTT, infers node/edge relationships from pa
   - Label visibility
   - Packet badge visibility
   - Link and force tuning
+  - Packet animation presets (Responsive/Balanced/Battery) and batching window
+  - Focus mode (quickly hide non-essential UI)
 
 ## Architecture
 
@@ -90,6 +92,11 @@ Run individual parts:
 npm run dev:server
 npm run dev:client
 ```
+
+GUI tips:
+- Mobile uses tabs to switch between **Visualizer** and **Packet log** so only one heavy pane renders at a time.
+- Press `f` to toggle Focus mode and hide non-essential overlays.
+- Visualizer settings persist in local storage.
 
 ## Production build and run
 

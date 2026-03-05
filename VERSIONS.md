@@ -1,5 +1,24 @@
 # Versions
 
+## [0.7.1] – 2026-03-05
+
+### Changed
+- Packet animation now highlights nodes only (no moving inter-hop particles)
+- Packet highlights continue to support fixed duration or packet-duration timing via Viz Settings
+- Reduced packet highlight refresh cadence to lower render churn during active traffic
+- Added packet observation window batching for highlight updates to coalesce bursts and reduce mobile animation jank
+- Mobile UI now uses tabbed view (Visualizer / Packet log) to reduce concurrent render load
+- Added Focus mode toggle (`f`) to hide non-essential overlays while monitoring
+- Visualizer settings now persist across reloads via local storage
+- Added packet animation presets (Responsive/Balanced/Battery) and inline guidance for tuning
+- Project naming updated to **MeshCore MQTT Visualiser** across UI and docs
+
+### Docs
+- Updated README project title and summary naming to MeshCore MQTT Visualiser
+- Added this release entry to the changelog
+
+---
+
 ## [0.7.0] – 2026-03-04
 
 ### Added
