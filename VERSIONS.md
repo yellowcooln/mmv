@@ -7,6 +7,10 @@
 - Packet highlights continue to support fixed duration or packet-duration timing via Viz Settings
 - Reduced packet highlight refresh cadence to lower render churn during active traffic
 - Added packet observation window batching for highlight updates to coalesce bursts and reduce mobile animation jank
+- Mobile UI now uses tabbed view (Visualizer / Packet log) to reduce concurrent render load
+- Added Focus mode toggle (`f`) to hide non-essential overlays while monitoring
+- Visualizer settings now persist across reloads via local storage
+- Added packet animation presets (Responsive/Balanced/Battery) and inline guidance for tuning
 - Project naming updated to **MeshCore MQTT Visualiser** across UI and docs
 
 ### Docs
