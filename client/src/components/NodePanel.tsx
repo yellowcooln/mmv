@@ -62,6 +62,7 @@ export function NodePanel({ node, edges, onClose }: Props) {
       <div className="px-4 py-3 space-y-3 text-gray-300">
         <Field label="Hash" value={node.hash.toUpperCase()} mono />
         <Field label="Role" value={roleName} color={roleColor} />
+        <Field label="Observer" value={node.is_observer ? 'Yes' : 'No'} color={node.is_observer ? '#22d3ee' : undefined} />
         <Field label="Packets" value={String(node.packet_count)} />
         <Field label="First seen" value={formatTime(node.first_seen)} />
         <Field label="Last seen" value={`${formatTime(node.last_seen)} (${timeAgo(node.last_seen)})`} />

@@ -144,7 +144,7 @@ export default function App() {
 
         {selectedNode && !panelOpen && (
           <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-900/95 backdrop-blur px-3 py-2 text-xs font-mono shadow-xl">
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: ROLE_COLORS[selectedNode.device_role] ?? ROLE_COLORS[0] }} />
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: selectedNode.is_observer ? '#22d3ee' : (ROLE_COLORS[selectedNode.device_role] ?? ROLE_COLORS[0]) }} />
             <span className="text-gray-100 max-w-[140px] truncate">{selectedNode.name ?? selectedNode.hash.toUpperCase()}</span>
             <button onClick={() => setPanelOpen(true)} className="text-purple-400 hover:text-purple-300 transition-colors ml-1" title="View details">↗</button>
             <button onClick={() => handleSelect(null)} className="text-gray-500 hover:text-gray-300 transition-colors text-base leading-none ml-0.5" title="Clear selection">×</button>

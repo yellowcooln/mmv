@@ -39,6 +39,9 @@ export function PacketLog({ packets }: Props) {
           {p.pathLen > 0 && (
             <span className="text-gray-600 shrink-0">{p.pathLen} hop{p.pathLen !== 1 ? 's' : ''}</span>
           )}
+          {p.observerHash && (
+            <span className="text-cyan-400 shrink-0">obs:{p.observerHash.toUpperCase()}</span>
+          )}
         </div>
       ))}
     </div>

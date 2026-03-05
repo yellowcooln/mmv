@@ -23,6 +23,7 @@ db.exec(`
     public_key  TEXT UNIQUE,           -- full 32-byte Ed25519 public key if known from advert
     name        TEXT,                  -- node name from advert
     device_role INTEGER DEFAULT 0,     -- DeviceRole enum value
+    is_observer INTEGER DEFAULT 0,     -- true when seen as MQTT observer
     first_seen  INTEGER NOT NULL,
     last_seen   INTEGER NOT NULL,
     packet_count INTEGER DEFAULT 0
@@ -58,11 +59,17 @@ db.exec(`
   );
 `);
 
+const nodeColumns = db.prepare('PRAGMA table_info(nodes)').all() as Array<{ name: string }>;
+if (!nodeColumns.some((column) => column.name === 'is_observer')) {
+  db.exec('ALTER TABLE nodes ADD COLUMN is_observer INTEGER DEFAULT 0');
+}
+
 export interface NodeRow {
   hash: string;
   public_key: string | null;
   name: string | null;
   device_role: number;
+  is_observer: number;
   first_seen: number;
   last_seen: number;
   packet_count: number;
@@ -81,9 +88,23 @@ export interface EdgeRow {
 // --- Prepared statements ---
 
 const upsertNode = db.prepare(`
-  INSERT INTO nodes (hash, first_seen, last_seen, packet_count)
-  VALUES (?, ?, ?, 1)
+  INSERT INTO nodes (hash, first_seen, last_seen, packet_count, is_observer)
+  VALUES (?, ?, ?, 1, 0)
   ON CONFLICT(hash) DO UPDATE SET
+    last_seen    = excluded.last_seen,
+    packet_count = packet_count + 1
+`);
+
+const upsertObserverNode = db.prepare(`
+  INSERT INTO nodes (hash, public_key, first_seen, last_seen, packet_count, is_observer)
+  VALUES (?, ?, ?, ?, 1, 1)
+  ON CONFLICT(hash) DO UPDATE SET
+    public_key   = COALESCE(public_key, excluded.public_key),
+    is_observer  = 1,
+    last_seen    = excluded.last_seen,
+    packet_count = packet_count + 1
+  ON CONFLICT(public_key) DO UPDATE SET
+    is_observer  = 1,
     last_seen    = excluded.last_seen,
     packet_count = packet_count + 1
 `);
@@ -94,8 +115,8 @@ const updateNodeFromAdvert = db.prepare(`
 `);
 
 const upsertNodeWithKey = db.prepare(`
-  INSERT INTO nodes (hash, public_key, name, device_role, first_seen, last_seen, packet_count)
-  VALUES (?, ?, ?, ?, ?, ?, 1)
+  INSERT INTO nodes (hash, public_key, name, device_role, first_seen, last_seen, packet_count, is_observer)
+  VALUES (?, ?, ?, ?, ?, ?, 1, 0)
   ON CONFLICT(hash) DO UPDATE SET
     public_key   = COALESCE(excluded.public_key, public_key),
     name         = COALESCE(excluded.name, name),
@@ -140,6 +161,14 @@ export function touchNode(hash: string, now: number): NodeRow {
   return getNode.get(normalizedHash) as unknown as NodeRow;
 }
 
+export function touchObserverNode(observerKey: string, now: number): NodeRow | null {
+  const hash = hashFromKeyPrefix(observerKey);
+  if (!hash) return null;
+
+  upsertObserverNode.run(hash, observerKey, now, now);
+  return getNode.get(hash) as unknown as NodeRow;
+}
+
 export function touchEdge(fromHash: string, toHash: string, now: number): EdgeRow {
   const from = fromHash.toLowerCase();
   const to = toHash.toLowerCase();
@@ -175,6 +204,7 @@ export const MIN_EDGE_PACKETS = parseInt(process.env.MIN_EDGE_PACKETS ?? '5', 10
 
 const selectAllNodes = db.prepare(`
   SELECT n.hash, n.public_key, n.name, n.device_role,
+         n.is_observer,
          n.first_seen, n.last_seen, n.packet_count,
          l.latitude, l.longitude
   FROM nodes n

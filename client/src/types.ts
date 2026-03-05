@@ -5,6 +5,7 @@ export interface NodeData {
   public_key: string | null;
   name: string | null;
   device_role: number;    // DeviceRole enum
+  is_observer: number;
   first_seen: number;     // unix ms
   last_seen: number;      // unix ms
   packet_count: number;
@@ -34,6 +35,7 @@ export interface PacketEvent {
   pathLen: number;
   path: string[];
   duration: number | null;
+  observerHash: string | null;
   receivedAt: number;
 }
 
@@ -74,5 +76,5 @@ export type WsMessage =
   | { type: 'node'; node: NodeData }
   | { type: 'edge'; edge: EdgeData }
   | { type: 'stats'; stats: StatsData }
-  | { type: 'packet'; packetType: string; hash: string; pathLen: number; path: string[]; duration: number | null }
+  | { type: 'packet'; packetType: string; hash: string; pathLen: number; path: string[]; duration: number | null; observerHash: string | null }
   | { type: 'debug'; level: 'info' | 'warn' | 'error'; message: string; ts: number };
