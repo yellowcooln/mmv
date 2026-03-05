@@ -21,10 +21,11 @@ const MAX_EDGE_VERTS = MAX_NODES * 12;
 const _dummy = new THREE.Object3D();
 const _col = new THREE.Color();
 
-// Default/selected/dimmed edge colours as pre-computed RGB components
+// Default/selected/dimmed/packet-hit edge colours as pre-computed RGB components
 const COL_EDGE_DEFAULT = new THREE.Color(0x2563eb);
 const COL_EDGE_SEL     = new THREE.Color(0xfbbf24);
 const COL_EDGE_DIM     = new THREE.Color(0x1e3558);
+const COL_EDGE_PKT     = new THREE.Color(0x4ade80); // bright green — active packet path
 
 export interface SimNode {
   id: string;
@@ -96,6 +97,12 @@ export class MeshRenderer {
   private edgeMaterial: THREE.LineBasicMaterial;
   /** stored source/target id pairs for fast per-tick position updates */
   private edgePairs: [string, string][] = [];
+
+  // ---- Packet-trace state ----
+  /** node ids currently on an active packet path — drives edge highlight */
+  private packetHitSet = new Set<string>();
+  /** last selectedId passed to updateColors — kept so setPacketHits can redraw */
+  private currentSelectedId: string | null = null;
 
   // ---- Labels (individual Sprites, one per node) ----
   private labelMap = new Map<string, THREE.Sprite>();
@@ -250,7 +257,7 @@ export class MeshRenderer {
     // ---- Edges ----
     this.edgePairs = links.map(l => [linkEndId(l.source), linkEndId(l.target)]);
     this.writeEdgePositions();
-    this.writeEdgeColors(null); // default colours
+    this.writeEdgeColors(this.currentSelectedId);
 
     // ---- Labels ----
     this.syncLabels(nodes);
@@ -300,27 +307,32 @@ export class MeshRenderer {
   }
 
   /**
-   * Called when selection or packet-highlight state changes.
+   * Called when selection changes.
    * Updates per-instance sphere colours and per-vertex edge colours.
+   * Packet-path highlighting is handled separately via setPacketHits().
    */
-  updateColors(nodes: SimNode[], selectedId: string | null, activeHits: Set<string>) {
+  updateColors(nodes: SimNode[], selectedId: string | null) {
+    this.currentSelectedId = selectedId;
     for (const node of nodes) {
       const i = this.nodeIndexMap.get(node.id);
       if (i === undefined) continue;
-      let hex: string;
-      if (node.id === selectedId) {
-        hex = '#fbbf24';                                        // selected: amber
-      } else if (activeHits.has(node.id)) {
-        hex = node.color === '#22d3ee' ? '#67e8f9' : '#fef08a'; // packet hit: bright
-      } else {
-        hex = node.color;                                        // role colour
-      }
+      const hex = node.id === selectedId ? '#fbbf24' : node.color;
       _col.set(hex);
       this.nodeMesh.setColorAt(i, _col);
     }
     if (this.nodeMesh.instanceColor) this.nodeMesh.instanceColor.needsUpdate = true;
 
     this.writeEdgeColors(selectedId);
+  }
+
+  /**
+   * Update the set of node ids that are on an active packet path.
+   * Any edge whose both endpoints are in the set is drawn with the packet-hit colour.
+   * Pass an empty set to clear all packet-path highlights.
+   */
+  setPacketHits(hits: Set<string>) {
+    this.packetHitSet = hits;
+    this.writeEdgeColors(this.currentSelectedId);
   }
 
   setLinkOpacity(opacity: number) {
@@ -496,16 +508,27 @@ export class MeshRenderer {
     this.edgeMesh.geometry.setDrawRange(0, this.edgePairs.length * 2);
   }
 
-  /** Write per-vertex edge colours based on current selection. */
+  /** Write per-vertex edge colours based on current selection and active packet hits. */
   private writeEdgeColors(selectedId: string | null) {
     const buf = this.edgeColBuf;
+    const hits = this.packetHitSet;
     let i = 0;
     for (const [srcId, tgtId] of this.edgePairs) {
       if (i + 6 > buf.length) break;
-      const col = selectedId
-        ? (srcId === selectedId || tgtId === selectedId ? COL_EDGE_SEL : COL_EDGE_DIM)
-        : COL_EDGE_DEFAULT;
-      // Both vertices of the line segment get the same colour
+      let col: THREE.Color;
+      if (selectedId) {
+        if (srcId === selectedId || tgtId === selectedId) {
+          col = COL_EDGE_SEL;  // selection takes priority
+        } else if (hits.size > 0 && hits.has(srcId) && hits.has(tgtId)) {
+          col = COL_EDGE_PKT;  // packet path
+        } else {
+          col = COL_EDGE_DIM;
+        }
+      } else if (hits.size > 0 && hits.has(srcId) && hits.has(tgtId)) {
+        col = COL_EDGE_PKT;    // packet path (no selection)
+      } else {
+        col = COL_EDGE_DEFAULT;
+      }
       buf[i++] = col.r; buf[i++] = col.g; buf[i++] = col.b;
       buf[i++] = col.r; buf[i++] = col.g; buf[i++] = col.b;
     }
