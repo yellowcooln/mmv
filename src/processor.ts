@@ -50,9 +50,11 @@ function normalizeHash(value: unknown): string | null {
   return cleaned;
 }
 
-function applyPathAndObserver(path: string[], observerKey: string | undefined, now: number): { nodes: NodeRow[]; edges: EdgeRow[] } {
+function applyPathAndObserver(path: string[], observerKey: string | undefined, now: number): { nodes: NodeRow[]; edges: EdgeRow[]; seenNodes: Set<string>; seenEdges: Set<string> } {
   const updatedNodes: NodeRow[] = [];
+  const seenNodes = new Set<string>();
   const updatedEdges: EdgeRow[] = [];
+  const seenEdges = new Set<string>();
 
   for (let i = 0; i < path.length; i++) {
     const pathHash = path[i];
@@ -64,18 +66,21 @@ function applyPathAndObserver(path: string[], observerKey: string | undefined, n
     }
 
     updatedNodes.push(node);
+    seenNodes.add(pathHash);
   }
 
   for (let i = 0; i < path.length - 1; i++) {
     const edge = touchEdge(path[i], path[i + 1], now);
+    seenEdges.add(`${edge.from_hash}>${edge.to_hash}`);
     updatedEdges.push(edge);
   }
 
   const observerHash = observerKey ? hashFromKeyPrefix(observerKey) : null;
   if (observerHash) {
     const observerNode = touchNode(observerHash, now);
-    if (!updatedNodes.some((n) => n.hash === observerHash)) {
+    if (!seenNodes.has(observerHash)) {
       updatedNodes.push(observerNode);
+      seenNodes.add(observerHash);
     }
 
     if (path.length > 0) {
@@ -90,14 +95,16 @@ function applyPathAndObserver(path: string[], observerKey: string | undefined, n
 
       if (lastHop !== observerHash) {
         const edge = touchEdge(lastHop, observerHash, now);
-        if (!updatedEdges.some((e) => e.from_hash === edge.from_hash && e.to_hash === edge.to_hash)) {
+        const edgeKey = `${edge.from_hash}>${edge.to_hash}`;
+        if (!seenEdges.has(edgeKey)) {
+          seenEdges.add(edgeKey);
           updatedEdges.push(edge);
         }
       }
     }
   }
 
-  return { nodes: updatedNodes, edges: updatedEdges };
+  return { nodes: updatedNodes, edges: updatedEdges, seenNodes, seenEdges };
 }
 
 // When true, packets with a message hash already seen recently are skipped.
@@ -140,7 +147,7 @@ export function processPacket(hex: string, observerKey?: string): ProcessResult 
     .map((h) => normalizeHash(h))
     .filter((h): h is string => h !== null);
 
-  const { nodes: updatedNodes, edges: updatedEdges } = applyPathAndObserver(path, observerKey, now);
+  const { nodes: updatedNodes, edges: updatedEdges, seenNodes, seenEdges } = applyPathAndObserver(path, observerKey, now);
   const broadcastPath = buildBroadcastPath(path, observerKey);
 
   if (packet.payloadType === (PayloadType.Advert as number) && packet.payload.decoded) {
@@ -178,13 +185,16 @@ export function processPacket(hex: string, observerKey?: string): ProcessResult 
         ? (markNodeAsTransitRepeater(normalizedAdvertHash) ?? node)
         : node;
 
-      if (!updatedNodes.some((n) => n.hash === advertHash)) {
+      if (!seenNodes.has(advertHash)) {
         updatedNodes.push(resolvedNode);
+        seenNodes.add(advertHash);
       }
 
       if (path.length > 0 && advertHash !== path[0]) {
         const advertEdge = touchEdge(advertHash, path[0], now);
-        if (!updatedEdges.some((e) => e.from_hash === advertEdge.from_hash && e.to_hash === advertEdge.to_hash)) {
+        const edgeKey = `${advertEdge.from_hash}>${advertEdge.to_hash}`;
+        if (!seenEdges.has(edgeKey)) {
+          seenEdges.add(edgeKey);
           updatedEdges.push(advertEdge);
         }
       }

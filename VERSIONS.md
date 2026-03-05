@@ -1,5 +1,26 @@
 # Versions
 
+## [0.7.2] – 2026-03-05
+
+### Optimised
+- Replaced O(n) `.some()` / `.findIndex()` deduplication in packet processor with Set-based O(1) lookups
+- Replaced O(n) `mergeNode` / `mergeEdge` `findIndex` scans in WebSocket hook with early-exit linear scan and identity check to avoid unnecessary array copies
+- Replaced O(n) `Array.shift()` in packet rate tracking with index-based pointer that compacts periodically
+- WebSocket reconnection now uses exponential backoff (1 s → 30 s cap) instead of a fixed 3 s delay
+
+### Fixed
+- NodePanel no longer shows stale "location data not used for graph positioning" message; now displays actual lat/lng coordinates when available
+
+### Docs
+- Removed stale `PACKET_ANIMATION_ENABLED` and `PACKET_ANIMATION_MAX` env vars from README (never implemented)
+- Added missing env vars to README: `MIN_EDGE_PACKETS`, `DEDUPE_ENABLED`, `GEO_ENABLED`, `CENTER_LAT`, `CENTER_LON`
+- Fixed features list: removed references to 2D mode and packet badges, added geo influence, orbit mode, label sizing
+- Fixed `/api/config` endpoint docs to include `geoEnabled` and `geoCenter` fields
+- Corrected locations table description and notes to reflect geographic layout influence (added in 0.7.0)
+- Updated WebSocket `packet` message docs to include `observerHash` field
+
+---
+
 ## [0.7.1] – 2026-03-05
 
 ### Changed

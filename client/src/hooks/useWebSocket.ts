@@ -48,21 +48,27 @@ const DEFAULT_HOP_DURATION_MS = 300;
 const MAX_PENDING_BATCHES = 120;
 
 function mergeNode(nodes: NodeData[], incoming: NodeData): NodeData[] {
-  const idx = nodes.findIndex(n => n.hash === incoming.hash);
-  if (idx === -1) return [...nodes, incoming];
-  const updated = [...nodes];
-  updated[idx] = incoming;
-  return updated;
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].hash === incoming.hash) {
+      if (nodes[i] === incoming) return nodes;
+      const updated = nodes.slice();
+      updated[i] = incoming;
+      return updated;
+    }
+  }
+  return [...nodes, incoming];
 }
 
 function mergeEdge(edges: EdgeData[], incoming: EdgeData): EdgeData[] {
-  const idx = edges.findIndex(
-    e => e.from_hash === incoming.from_hash && e.to_hash === incoming.to_hash,
-  );
-  if (idx === -1) return [...edges, incoming];
-  const updated = [...edges];
-  updated[idx] = incoming;
-  return updated;
+  for (let i = 0; i < edges.length; i++) {
+    if (edges[i].from_hash === incoming.from_hash && edges[i].to_hash === incoming.to_hash) {
+      if (edges[i] === incoming) return edges;
+      const updated = edges.slice();
+      updated[i] = incoming;
+      return updated;
+    }
+  }
+  return [...edges, incoming];
 }
 
 function buildInFlightPacket(
@@ -114,8 +120,10 @@ export function useWebSocket(url: string, packetFlowSettings: PacketFlowSettings
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectDelayRef = useRef(1000);
   const packetIdRef = useRef(0);
   const packetTimestampsRef = useRef<number[]>([]);
+  const packetTsHeadRef = useRef(0);
   const pendingPacketsRef = useRef(new Map<string, PendingPacket>());
 
   const flushPendingPacket = useCallback((key: string) => {
@@ -191,11 +199,16 @@ export function useWebSocket(url: string, packetFlowSettings: PacketFlowSettings
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
+    ws.onopen = () => {
+      setConnected(true);
+      reconnectDelayRef.current = 1000;
+    };
 
     ws.onclose = () => {
       setConnected(false);
-      reconnectTimer.current = setTimeout(connect, 3000);
+      const delay = reconnectDelayRef.current;
+      reconnectDelayRef.current = Math.min(delay * 2, 30_000);
+      reconnectTimer.current = setTimeout(connect, delay);
     };
 
     ws.onerror = () => {
@@ -255,10 +268,14 @@ export function useWebSocket(url: string, packetFlowSettings: PacketFlowSettings
 
           const cutoff = now - 60_000;
           packetTimestampsRef.current.push(now);
-          while (packetTimestampsRef.current.length > 0 && packetTimestampsRef.current[0] < cutoff) {
-            packetTimestampsRef.current.shift();
+          while (packetTsHeadRef.current < packetTimestampsRef.current.length && packetTimestampsRef.current[packetTsHeadRef.current] < cutoff) {
+            packetTsHeadRef.current++;
           }
-          setPacketRatePerMinute(packetTimestampsRef.current.length);
+          if (packetTsHeadRef.current > 200) {
+            packetTimestampsRef.current = packetTimestampsRef.current.slice(packetTsHeadRef.current);
+            packetTsHeadRef.current = 0;
+          }
+          setPacketRatePerMinute(packetTimestampsRef.current.length - packetTsHeadRef.current);
           break;
         }
 

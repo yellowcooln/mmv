@@ -100,10 +100,11 @@ export function NodePanel({ node, edges, onClose }: Props) {
           </div>
         )}
 
-        {/* Location note */}
-        <div className="text-gray-600 text-xs italic border-t border-gray-800 pt-3">
-          Location data is stored but not used for graph positioning.
-        </div>
+        {node.latitude != null && node.longitude != null && (
+          <div className="border-t border-gray-800 pt-3">
+            <Field label="Location" value={`${node.latitude.toFixed(4)}, ${node.longitude.toFixed(4)}`} mono />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -11,12 +11,13 @@ It listens to MeshCore packets from MQTT, infers node/edge relationships from pa
 - Node enrichment from `Advert` payloads (name, public key, role)
 - Optional observer pre-population using MQTT topic keys (`MQTT_OBSERVERS`)
 - Backend debug log stream over WebSocket
+- Geographic layout influence from advert lat/lng data
 - Frontend controls for:
-  - 2D/3D graph mode
-  - Label visibility
-  - Packet badge visibility
-  - Link and force tuning
+  - Label visibility and sizing
+  - Link and force tuning (distance, strength, repulsion)
+  - Geo influence slider (when location data is available)
   - Packet animation presets (Responsive/Balanced/Battery) and batching window
+  - 3D orbit mode
   - Focus mode (quickly hide non-essential UI)
 
 ## Architecture
@@ -69,9 +70,12 @@ Edit `.env` as needed (MQTT broker and auth).
 | `MQTT_OBSERVERS` | _(unset)_ | Comma-separated observer public keys/prefixes to pre-create observer nodes |
 | `MQTT_DISPLAY_NAME` | _(unset)_ | Override broker label shown in the UI (defaults to hostname from `MQTT_URL`) |
 | `PORT` | `3001` | Backend HTTP/WebSocket port |
-| `PACKET_ANIMATION_ENABLED` | `true` | Hard override for packet animation UI (`false` disables animation regardless of frontend toggle) |
-| `PACKET_ANIMATION_MAX` | `60` | Max packet animations rendered/queued at once in the frontend (clamped 10-200) |
 | `DB_PATH` | `./data/mmv.db` | SQLite database path |
+| `MIN_EDGE_PACKETS` | `5` | Minimum packets on an edge before it is shown to clients |
+| `DEDUPE_ENABLED` | `false` | Skip packets with a message hash already seen recently |
+| `GEO_ENABLED` | `true` | Set to `false` to disable geographic layout influence entirely |
+| `CENTER_LAT` | _(unset)_ | Fixed latitude for geo projection centre (defaults to node centroid) |
+| `CENTER_LON` | _(unset)_ | Fixed longitude for geo projection centre (defaults to node centroid) |
 | `VITE_PORT` | `9001` | Vite dev server port (client only) |
 
 ## Development
@@ -115,7 +119,7 @@ In production mode (`NODE_ENV=production`), the backend serves `client/dist`.
 - `GET /api/edges` — all known edges
 - `GET /api/stats` — summary counts
 - `GET /api/graph` — `{ nodes, edges, stats }`
-- `GET /api/config` — `{ mqttDisplayName }` broker label for the UI
+- `GET /api/config` — `{ mqttDisplayName, geoEnabled, geoCenter }` runtime config for the UI
 
 ### WebSocket (`/ws`)
 
@@ -125,7 +129,7 @@ Message types:
 - `node` — incremental node update
 - `edge` — incremental edge update
 - `stats` — periodic stats broadcast
-- `packet` — packet activity event (`packetType`, `hash`, `pathLen`, `path`, `duration`)
+- `packet` — packet activity event (`packetType`, `hash`, `pathLen`, `path`, `duration`, `observerHash`)
 - `debug` — backend log events (`info`/`warn`/`error`)
 
 ## Data model
@@ -135,7 +139,7 @@ SQLite tables:
 - `nodes` — canonical hash nodes + metadata (`name`, `public_key`, role, counters)
 - `edges` — directed path links with counters and timestamps
 - `adverts` — historical advert records
-- `locations` — advert location data (stored, not used for graph layout)
+- `locations` — advert location data used for geographic layout influence
 
 ## Packet processing behavior
 
@@ -151,4 +155,4 @@ SQLite tables:
 ## Notes
 
 - Node hashes are normalized to lowercase 2-char hex strings.
-- Graph layout is force-directed and not geospatial (location data is persisted only).
+- Graph layout is 3D force-directed with optional geographic influence from advert location data.
