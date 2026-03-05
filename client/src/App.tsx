@@ -144,7 +144,7 @@ export default function App() {
 
   const handleSelect = (hash: string | null) => {
     setSelectedId(hash);
-    setPanelOpen(hash !== null);
+    setPanelOpen(hash !== null && !isMobileViewport);
   };
 
   const applyPacketPreset = (preset: 'responsive' | 'balanced' | 'battery') => {
@@ -276,9 +276,15 @@ export default function App() {
       </div>
 
       {selectedNode && panelOpen && (
-        <div className="absolute inset-y-0 right-0 z-40">
-          <NodePanel node={selectedNode} edges={edges} onClose={() => setPanelOpen(false)} />
-        </div>
+        isMobileViewport ? (
+          <div className="absolute inset-x-0 bottom-0 z-40 max-h-[55vh] [&>div]:w-full [&>div]:border-l-0 [&>div]:border-t [&>div]:border-gray-800">
+            <NodePanel node={selectedNode} edges={edges} onClose={() => setPanelOpen(false)} />
+          </div>
+        ) : (
+          <div className="absolute inset-y-0 right-0 z-40">
+            <NodePanel node={selectedNode} edges={edges} onClose={() => setPanelOpen(false)} />
+          </div>
+        )
       )}
 
       {selectedNode && !panelOpen && (
@@ -306,7 +312,7 @@ export default function App() {
             {mobileTab === 'visualizer' ? (
               renderGraph()
             ) : (
-              <PacketLog packets={recentPackets} />
+              <PacketLog packets={recentPackets} fullHeight />
             )}
           </div>
         </>

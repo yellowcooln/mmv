@@ -2,6 +2,7 @@ import type { PacketEvent } from '../types';
 
 interface Props {
   packets: PacketEvent[];
+  fullHeight?: boolean;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -16,11 +17,11 @@ const TYPE_COLORS: Record<string, string> = {
   Response:    'text-rose-400',
 };
 
-export function PacketLog({ packets }: Props) {
+export function PacketLog({ packets, fullHeight = false }: Props) {
   if (packets.length === 0) return null;
 
   return (
-    <div className="h-28 bg-gray-900 border-t border-gray-800 overflow-y-auto font-mono text-xs shrink-0">
+    <div className={`${fullHeight ? 'h-full' : 'h-28'} bg-gray-900 border-t border-gray-800 overflow-y-auto font-mono text-xs shrink-0`}>
       <div className="px-3 py-1 text-gray-600 sticky top-0 bg-gray-900 border-b border-gray-800">
         packet log
       </div>
