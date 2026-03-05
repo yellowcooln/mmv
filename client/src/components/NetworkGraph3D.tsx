@@ -43,6 +43,7 @@ interface GraphLink {
 }
 
 function nodeColor(node: NodeData): string {
+  if (node.is_observer) return '#22d3ee';
   return ROLE_COLORS[node.device_role] ?? ROLE_COLORS[0];
 }
 

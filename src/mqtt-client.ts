@@ -1,8 +1,7 @@
 import mqtt from 'mqtt';
 import { processPacket } from './processor.js';
 import { broadcastNode, broadcastEdge, broadcastStats, broadcastPacket, debugLog } from './ws-broadcast.js';
-import { touchNode, MIN_EDGE_PACKETS } from './db.js';
-import { hashFromKeyPrefix } from './hash-utils.js';
+import { touchObserverNode, MIN_EDGE_PACKETS } from './db.js';
 
 const MQTT_URL = process.env.MQTT_URL ?? 'mqtt://mqtt.example.com:1883';
 const MQTT_TOPIC = process.env.MQTT_TOPIC ?? 'meshcore/+/+/packets';
@@ -19,12 +18,11 @@ function prepopulateObserverNodes(): void {
 
   const now = Date.now();
   for (const key of configured) {
-    const hash = hashFromKeyPrefix(key);
-    if (!hash) {
+    const node = touchObserverNode(key, now);
+    if (!node) {
       debugLog.warn(`[mqtt] skipping invalid observer key in MQTT_OBSERVERS: ${key}`);
       continue;
     }
-    const node = touchNode(hash, now);
     broadcastNode(node);
   }
 
@@ -65,13 +63,20 @@ export function startMqtt(): mqtt.MqttClient {
     debugLog.info(`[mqtt] message on ${topic} (${payload.length} bytes)`);
 
     const parts = topic.split('/');
-    const streamType = parts[parts.length - 1] ?? '';
-    const observerKey = parts.length >= 2 ? parts[parts.length - 2] : undefined;
+    if (parts.length !== 4 || parts[0] !== 'meshcore' || parts[3] !== 'packets') {
+      debugLog.warn(`[mqtt] skipping unexpected topic format: ${topic}`);
+      return;
+    }
 
-    const observerHash = observerKey ? hashFromKeyPrefix(observerKey) : null;
-    if (observerHash) {
-      const observerNode = touchNode(observerHash, Date.now());
+    const streamType = parts[3];
+    const observerKey = parts[2];
+
+    const observerNode = touchObserverNode(observerKey, Date.now());
+    if (observerNode) {
       broadcastNode(observerNode);
+    } else {
+      debugLog.warn(`[mqtt] skipping message with invalid observer key: ${observerKey}`);
+      return;
     }
 
     let result = null;
@@ -107,7 +112,7 @@ export function startMqtt(): mqtt.MqttClient {
     for (const edge of result.edges) {
       if (edge.packet_count >= MIN_EDGE_PACKETS) broadcastEdge(edge);
     }
-    broadcastPacket(result.packetType, result.hash, result.path.length, result.path, duration);
+    broadcastPacket(result.packetType, result.hash, result.path.length, result.path, duration, result.observerHash);
   });
 
   statsTimer = setInterval(() => {

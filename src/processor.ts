@@ -10,6 +10,7 @@ export interface ProcessResult {
   packetType: string;
   hash: string;
   path: string[];
+  observerHash: string | null;
 }
 
 function buildBroadcastPath(path: string[], observerKey: string | undefined): string[] {
@@ -159,5 +160,6 @@ export function processPacket(hex: string, observerKey?: string): ProcessResult 
     packetType,
     hash: packet.messageHash,
     path: broadcastPath,
+    observerHash: observerKey ? hashFromKeyPrefix(observerKey) : null,
   };
 }
