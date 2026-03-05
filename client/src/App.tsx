@@ -27,6 +27,7 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   animatePacketFlow: true,
   packetHighlightDurationMs: 5000,
   packetHighlightMode: 'fixed',
+  packetObservationWindowMs: 300,
 };
 
 interface ConfigResponse {
@@ -49,11 +50,13 @@ export default function App() {
     enabled: graphSettings.animatePacketFlow,
     highlightDurationMs: graphSettings.packetHighlightDurationMs,
     highlightMode: graphSettings.packetHighlightMode,
+    observationWindowMs: graphSettings.packetObservationWindowMs,
     maxInFlightPackets: isLikelyMobile ? 24 : 80,
   }), [
     graphSettings.animatePacketFlow,
     graphSettings.packetHighlightDurationMs,
     graphSettings.packetHighlightMode,
+    graphSettings.packetObservationWindowMs,
     isLikelyMobile,
   ]);
 
@@ -160,6 +163,15 @@ export default function App() {
                     { value: 'fixed', label: 'Fixed duration' },
                     { value: 'packetDuration', label: 'Use packet duration' },
                   ]}
+                  disabled={!graphSettings.animatePacketFlow}
+                />
+                <RangeControl
+                  label={`Packet batch window (ms): ${graphSettings.packetObservationWindowMs}`}
+                  min={0}
+                  max={1200}
+                  step={50}
+                  value={graphSettings.packetObservationWindowMs}
+                  onChange={(v) => setGraphSettings((s) => ({ ...s, packetObservationWindowMs: v }))}
                   disabled={!graphSettings.animatePacketFlow}
                 />
                 {hasGeoNodes && <RangeControl label={`Geo influence: ${graphSettings.geoInfluence.toFixed(2)}`} min={0} max={0.3} step={0.01} value={graphSettings.geoInfluence} onChange={(v) => setGraphSettings((s) => ({ ...s, geoInfluence: v }))} />}

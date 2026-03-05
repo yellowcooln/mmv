@@ -10,7 +10,19 @@ interface PacketFlowSettings {
   enabled: boolean;
   highlightDurationMs: number;
   highlightMode: 'fixed' | 'packetDuration';
+  observationWindowMs: number;
   maxInFlightPackets: number;
+}
+
+interface PendingPacket {
+  id: number;
+  packetType: string;
+  hash: string;
+  highlightedNodes: Set<string>;
+  startedAt: number;
+  finishedAt: number;
+  expiresAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 interface UseWebSocketResult {
@@ -33,6 +45,7 @@ const DEFAULT_STATS: StatsData = {
 };
 
 const DEFAULT_HOP_DURATION_MS = 300;
+const MAX_PENDING_BATCHES = 120;
 
 function mergeNode(nodes: NodeData[], incoming: NodeData): NodeData[] {
   const idx = nodes.findIndex(n => n.hash === incoming.hash);
@@ -44,7 +57,7 @@ function mergeNode(nodes: NodeData[], incoming: NodeData): NodeData[] {
 
 function mergeEdge(edges: EdgeData[], incoming: EdgeData): EdgeData[] {
   const idx = edges.findIndex(
-    e => e.from_hash === incoming.from_hash && e.to_hash === incoming.to_hash
+    e => e.from_hash === incoming.from_hash && e.to_hash === incoming.to_hash,
   );
   if (idx === -1) return [...edges, incoming];
   const updated = [...edges];
@@ -87,6 +100,10 @@ function buildInFlightPacket(
   };
 }
 
+function packetBatchKey(msg: Extract<WsMessage, { type: 'packet' }>): string {
+  return [msg.packetType, msg.hash, msg.observerHash ?? '', msg.path.join('>')].join('|');
+}
+
 export function useWebSocket(url: string, packetFlowSettings: PacketFlowSettings): UseWebSocketResult {
   const [graph, setGraph] = useState<GraphState>({ nodes: [], edges: [] });
   const [stats, setStats] = useState<StatsData>(DEFAULT_STATS);
@@ -99,6 +116,74 @@ export function useWebSocket(url: string, packetFlowSettings: PacketFlowSettings
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const packetIdRef = useRef(0);
   const packetTimestampsRef = useRef<number[]>([]);
+  const pendingPacketsRef = useRef(new Map<string, PendingPacket>());
+
+  const flushPendingPacket = useCallback((key: string) => {
+    const pending = pendingPacketsRef.current.get(key);
+    if (!pending) return;
+    pendingPacketsRef.current.delete(key);
+
+    setInFlightPackets((prev) => {
+      const now = Date.now();
+      const live = prev.filter((p) => p.finishedAt >= now);
+      const merged: InFlightPacket = {
+        id: pending.id,
+        packetType: pending.packetType,
+        hash: pending.hash,
+        highlightedNodes: [...pending.highlightedNodes],
+        startedAt: pending.startedAt,
+        finishedAt: pending.finishedAt,
+      };
+      return [merged, ...live].slice(0, packetFlowSettings.maxInFlightPackets);
+    });
+  }, [packetFlowSettings.maxInFlightPackets]);
+
+  const queueInFlightPacket = useCallback((msg: Extract<WsMessage, { type: 'packet' }>, packet: InFlightPacket) => {
+    const now = Date.now();
+    const windowMs = Math.max(0, packetFlowSettings.observationWindowMs);
+
+    if (windowMs === 0) {
+      setInFlightPackets((prev) => {
+        const live = prev.filter((p) => p.finishedAt >= now);
+        return [packet, ...live].slice(0, packetFlowSettings.maxInFlightPackets);
+      });
+      return;
+    }
+
+    const key = packetBatchKey(msg);
+    const existing = pendingPacketsRef.current.get(key);
+    if (existing && existing.expiresAt > now) {
+      for (const hash of packet.highlightedNodes) {
+        existing.highlightedNodes.add(hash);
+      }
+      existing.finishedAt = Math.max(existing.finishedAt, packet.finishedAt);
+      existing.startedAt = Math.min(existing.startedAt, packet.startedAt);
+      return;
+    }
+
+    if (pendingPacketsRef.current.size >= MAX_PENDING_BATCHES) {
+      const oldestKey = pendingPacketsRef.current.keys().next().value;
+      if (oldestKey) {
+        const oldest = pendingPacketsRef.current.get(oldestKey);
+        if (oldest?.timer) clearTimeout(oldest.timer);
+        pendingPacketsRef.current.delete(oldestKey);
+      }
+    }
+
+    const pending: PendingPacket = {
+      id: packet.id,
+      packetType: packet.packetType,
+      hash: packet.hash,
+      highlightedNodes: new Set(packet.highlightedNodes),
+      startedAt: packet.startedAt,
+      finishedAt: packet.finishedAt,
+      expiresAt: now + windowMs,
+      timer: null,
+    };
+
+    pending.timer = setTimeout(() => flushPendingPacket(key), windowMs);
+    pendingPacketsRef.current.set(key, pending);
+  }, [flushPendingPacket, packetFlowSettings.maxInFlightPackets, packetFlowSettings.observationWindowMs]);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -163,10 +248,7 @@ export function useWebSocket(url: string, packetFlowSettings: PacketFlowSettings
 
           const inFlight = buildInFlightPacket(msg, now, id, packetFlowSettings);
           if (inFlight) {
-            setInFlightPackets((prev) => {
-              const live = prev.filter((p) => p.finishedAt >= now);
-              return [inFlight, ...live].slice(0, packetFlowSettings.maxInFlightPackets);
-            });
+            queueInFlightPacket(msg, inFlight);
           } else {
             setInFlightPackets((prev) => prev.filter((p) => p.finishedAt >= now));
           }
@@ -188,12 +270,16 @@ export function useWebSocket(url: string, packetFlowSettings: PacketFlowSettings
           break;
       }
     };
-  }, [packetFlowSettings, url]);
+  }, [packetFlowSettings, queueInFlightPacket, url]);
 
   useEffect(() => {
     connect();
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      for (const pending of pendingPacketsRef.current.values()) {
+        if (pending.timer) clearTimeout(pending.timer);
+      }
+      pendingPacketsRef.current.clear();
       wsRef.current?.close();
     };
   }, [connect]);

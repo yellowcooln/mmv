@@ -20,6 +20,7 @@ export interface GraphSettings {
   animatePacketFlow: boolean;
   packetHighlightDurationMs: number;
   packetHighlightMode: 'fixed' | 'packetDuration';
+  packetObservationWindowMs: number;
 }
 
 interface Props {

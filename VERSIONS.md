@@ -6,6 +6,7 @@
 - Packet animation now highlights nodes only (no moving inter-hop particles)
 - Packet highlights continue to support fixed duration or packet-duration timing via Viz Settings
 - Reduced packet highlight refresh cadence to lower render churn during active traffic
+- Added packet observation window batching for highlight updates to coalesce bursts and reduce mobile animation jank
 - Project naming updated to **MeshCore MQTT Visualiser** across UI and docs
 
 ### Docs
