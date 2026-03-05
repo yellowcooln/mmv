@@ -12,7 +12,7 @@
  * for the 30-second display throttle that existed in the old implementation.
  */
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect } from 'react';
 import {
   forceSimulation,
   forceManyBody,
@@ -90,7 +90,6 @@ export function NetworkGraph3DCustom({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<MeshRenderer | null>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
 
   // Kept as refs so D3 tick closures always read current values without
   // causing the sim setup effect to re-run.
@@ -109,12 +108,12 @@ export function NetworkGraph3DCustom({
   // The D3 simulation instance, created once per mount.
   const simRef = useRef<Simulation3D<GraphSimNode> | null>(null);
 
-  // ---- Resize observer ----
+  // ---- Resize observer — calls renderer.setSize() directly, no React state ----
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const obs = new ResizeObserver(() => {
-      setSize({ width: container.clientWidth, height: container.clientHeight });
+      rendererRef.current?.setSize(container.clientWidth, container.clientHeight);
     });
     obs.observe(container);
     return () => obs.disconnect();
@@ -122,11 +121,16 @@ export function NetworkGraph3DCustom({
 
   // ---- Create renderer + D3 sim on mount ----
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvas = canvasRef.current!;
+    const container = containerRef.current;
 
     const renderer = new MeshRenderer(canvas, (id) => onSelect(id));
     rendererRef.current = renderer;
+
+    // Set initial size from the container's current dimensions
+    if (container) {
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
 
     // ---- Create 3D force simulation ----
     const sim = forceSimulation<GraphSimNode>([], 3)
@@ -152,13 +156,6 @@ export function NetworkGraph3DCustom({
       rendererRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---- Sync canvas size ----
-  useEffect(() => {
-    if (size.width > 0 && size.height > 0) {
-      rendererRef.current?.setSize(size.width, size.height);
-    }
-  }, [size]);
 
   // ---- Topology: rebuild sim nodes/links when graph data changes ----
   useEffect(() => {
@@ -382,14 +379,10 @@ export function NetworkGraph3DCustom({
 
   return (
     <div ref={containerRef} className="flex-1 relative overflow-hidden" style={{ minHeight: 0 }}>
-      {size.width > 0 && size.height > 0 && (
-        <canvas
-          ref={canvasRef}
-          width={size.width}
-          height={size.height}
-          style={{ display: 'block', width: size.width, height: size.height }}
-        />
-      )}
+      <canvas
+        ref={canvasRef}
+        style={{ display: 'block', width: '100%', height: '100%' }}
+      />
     </div>
   );
 }
